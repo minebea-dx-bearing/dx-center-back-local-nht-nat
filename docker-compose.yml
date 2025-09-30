@@ -4,7 +4,8 @@ services:
   backend:
     build:
       context: ./local-backend
-    container_name: local-backend
+    image: backend-dx_center
+    container_name: backend-dx-center
     ports:
       - "8009:8009"
     volumes:
