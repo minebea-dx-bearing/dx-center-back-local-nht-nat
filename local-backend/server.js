@@ -9,7 +9,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors());
 
 // mms
-app.use("/api/mms/assy-realtime", require("./api_nat/assy_realtime"));
+app.use("/nat/assy/mbr-realtime", require("./api_monitor/assy_mbr_realtime"));
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);

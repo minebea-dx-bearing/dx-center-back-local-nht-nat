@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: ./local-backend
+    container_name: local-backend
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./local-backend:/app
+      - /app/node_modules
+    restart: on-failure
+    environment:
+      - TZ=Asia/Bangkok

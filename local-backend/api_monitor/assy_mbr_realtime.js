@@ -6,26 +6,57 @@ const moment = require("moment");
 
 let machineData = {}; // ตัวเก็บค่ากลาง
 
+const MQTT_SERVER = "10.128.16.111";
+const DATABASE_PROD = "[nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]";
+const DATABASE_ALARM = "[nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]";
+
 // ฟังก์ชัน query ค่าเริ่มต้นจาก SQL
 const master_mc_no = async () => {
   try {
     const mc_no = await dbms.query(`
       WITH LatestProduction AS (
         SELECT
-            [registered],[mc_no],[process],[rssi],[daily_ok],[daily_ng],[daily_tt],
-            [c1_ok],[c2_ok],[c3_ok],[c4_ok],[c5_ok],
-            [c1_ng],[c2_ng],[c3_ng],[c4_ng],[c5_ng],
-            [ball_q],[ball_ang],[sep_ng_1],[sep_ng_2],[rtnr_ng],
-            [d1_ng],[d2_ng],[pre_p_ng],[m_p_ng],[press_check_ng],[rtnr_camera_ng],
-            [cycle_t],[model],[spec],[time_hr],[time_min],
-            ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
-        FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+            [registered]
+            ,[mc_no]
+            ,[process]
+            ,[rssi]
+            ,[daily_ok]
+            ,[daily_ng]
+            ,[daily_tt]
+            ,[c1_ok]
+            ,[c2_ok]
+            ,[c3_ok]
+            ,[c4_ok]
+            ,[c5_ok]
+            ,[c1_ng]
+            ,[c2_ng]
+            ,[c3_ng]
+            ,[c4_ng]
+            ,[c5_ng]
+            ,[ball_q]
+            ,[ball_ang]
+            ,[sep_ng_1]
+            ,[sep_ng_2]
+            ,[rtnr_ng]
+            ,[d1_ng]
+            ,[d2_ng]
+            ,[pre_p_ng]
+            ,[m_p_ng]
+            ,[press_check_ng]
+            ,[rtnr_camera_ng]
+            ,[cycle_t]
+            ,[model]
+            ,[spec]
+            ,[time_hr]
+            ,[time_min]
+            ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+        FROM ${DATABASE_PROD}
       ),
       LatestAlarm AS (
         SELECT
             [mc_no],[alarm],[occurred],
             ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
-        FROM [nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]
+        FROM ${DATABASE_ALARM}
         WHERE [alarm] LIKE 'RUN%'
       )
       SELECT 
@@ -61,9 +92,8 @@ const master_mc_no = async () => {
 })();
 
 // MQTT connect
-const IP_ADDRESS = "10.128.16.111";
 const PORT = "1883";
-const client = mqtt.connect(`mqtt://${IP_ADDRESS}:${PORT}`);
+const client = mqtt.connect(`mqtt://${MQTT_SERVER}:${PORT}`);
 
 client.on("connect", () => {
   console.log("MQTT Connected");
@@ -124,7 +154,7 @@ router.get("/machines", async (req, res) => {
                     WHEN RIGHT([alarm], 1) = '_' THEN 'after'
                     ELSE 'before'
                 END AS [alarm_type]
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]
+            FROM ${DATABASE_ALARM}
             WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] IN ('RUN', 'RUN_')
         ),
         [with_pairing] AS (
@@ -181,34 +211,58 @@ router.get("/machines", async (req, res) => {
 
     const dataArray = Object.values(machineData).map((item) => {
       let status_alarm;
-      if (item.alarm === "RUN") {
+      if (item.alarm.includes("RUN") && item.alarm.slice(-1) !== "_") {
         status_alarm = "RUNNING";
       } else if (item.status?.slice(-1) === "_") {
         status_alarm = "STOP";
+      } else if (item.broker === 0 || moment().diff(moment(item.occurred), "minutes") > 10) {
+        status_alarm = "SIGNAL LOSE";
       } else {
         status_alarm = item.status;
       }
 
       const runInfo = runningTime.find((rt) => rt.mc_no === item.mc_no);
+
+      let opn = 0;
+      let sum_run = 0;
+      let total_time = 0;
+
       if (runInfo) {
-        opn = Number(((runInfo.sum_duration / runInfo.total_time) * 100).toFixed(2));
+        sum_run = runInfo.sum_duration;
+        total_time = runInfo.total_time;
+        if (total_time > 0) {
+          opn = Number(((sum_run / total_time) * 100).toFixed(2));
+        }
       }
 
       // target ชั่วคราว
       let target = 0;
+      let target_ct = 0;
+
       if (item.model.includes("R-830")) {
-        target = Number((47500 * runInfo.total_time / 86400).toFixed(0));
+        target = Number((47500 * (runInfo?.total_time || 0) / 86400).toFixed(0));
+        target_ct = 1.6;
       }
+
+      // เปลี่ยนชื่อใหม่เหมือนๆกัน
+      const prod_ok = item.daily_ok || 0;
+      const prod_ng = item.daily_ng || 0;
+      const cycle_t = item.cycle_t || 0;
+      
 
       return {
         ...item,
         mc_no: item.mc_no.toUpperCase(),
-        yield_per: item.daily_ok + item.daily_ng === 0 ? 0 : Number(((item.daily_ok / (item.daily_ok + item.daily_ng)) * 100).toFixed(2)),
+        yield_per: prod_ok + prod_ng === 0 ? 0 : Number(((prod_ok / (prod_ok + prod_ng)) * 100).toFixed(2)),
         status_alarm,
-        sum_run: runInfo.sum_duration,
-        total_time: runInfo.total_time,
+        prod_ok,
+        prod_ng,
+        cycle_t,
+        sum_run: runInfo?.sum_duration || 0,
+        total_time: runInfo?.total_time || 0,
         opn,
-        target
+        target,
+        target_ct
       };
     });
 
