@@ -118,12 +118,23 @@ client.on("message", (topic, message) => {
         mqttData.cycle_t = mqttData.cycle_t / 100;
       }
 
-      machineData[mc_no] = {
-        ...machineData[mc_no],
-        ...mqttData,
-        updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
-        source: "MQTT",
-      };
+      if (machineData.hasOwnProperty(mc_no)) {
+        machineData[mc_no] = {
+          ...machineData[mc_no],
+          ...mqttData,
+          updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
+          source: "MQTT",
+        };
+      } else {
+        console.log(`New machine detected: ${mc_no}. Adding to cache.`);
+        machineData[mc_no] = {
+          ...mqttData,
+          registered: moment().format("YYYY-MM-DD HH:mm:ss"),
+          alarm: 'no data',
+          updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
+          source: "MQTT",
+        };
+      }
     }
   } catch (error) {
     console.error("MQTT Message Error: ", error);
@@ -211,14 +222,14 @@ router.get("/machines", async (req, res) => {
 
     const dataArray = Object.values(machineData).map((item) => {
       let status_alarm;
-      if (item.alarm.includes("RUN") && item.alarm.slice(-1) !== "_") {
-        status_alarm = "RUNNING";
-      } else if (item.status?.slice(-1) === "_") {
-        status_alarm = "STOP";
-      } else if (item.broker === 0 || moment().diff(moment(item.occurred), "minutes") > 10) {
+      if (item.broker === 0 || moment().diff(moment(item.occurred), "minutes") > 10 || item.occurred === null) {
         status_alarm = "SIGNAL LOSE";
+      } else if (item.alarm.includes("RUN") && item.alarm.slice(-1) !== "_") {
+        status_alarm = "RUNNING";
+      } else if (item.alarm?.slice(-1) === "_") {
+        status_alarm = "STOP";
       } else {
-        status_alarm = item.status;
+        status_alarm = item.alarm;
       }
 
       const runInfo = runningTime.find((rt) => rt.mc_no === item.mc_no);
@@ -269,7 +280,7 @@ router.get("/machines", async (req, res) => {
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target || 0;
-        acc.total_ok += item.daily_ok || 0;
+        acc.total_ok += item.prod_ok || 0;
         acc.total_cycle_t += item.cycle_t || 0;
         acc.total_opn += item.opn || 0;
         acc.count += 1;
