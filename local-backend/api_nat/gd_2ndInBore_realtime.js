@@ -4,75 +4,136 @@ const dbms = require("../instance/ms_instance_nat");
 const mqtt = require("mqtt");
 const moment = require("moment");
 
-let machineData = {}; // ตัวเก็บค่ากลาง
+// In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
+let machineData = {};
 
-const MQTT_SERVER = "10.128.16.111";
-const DATABASE_PROD = "[nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]";
-const DATABASE_ALARM = "[nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]";
+// --- Configurations ---
+const MQTT_SERVER = "10.128.16.110";
+const PORT = "1883";
+const DATABASE_PROD = "[nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]";
+const DATABASE_ALARM = "[nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]";
 
-// ฟังก์ชัน query ค่าเริ่มต้นจาก SQL
 const master_mc_no = async () => {
   try {
-    const mc_no = await dbms.query(`
-      WITH LatestProduction AS (
-        SELECT
+    const mc_no = await dbms.query(
+      `
+        WITH LatestProduction AS (
+            SELECT
             [registered]
             ,[mc_no]
             ,[process]
             ,[rssi]
-            ,[daily_ok]
-            ,[daily_ng]
-            ,[daily_tt]
-            ,[c1_ok]
-            ,[c2_ok]
-            ,[c3_ok]
-            ,[c4_ok]
-            ,[c5_ok]
-            ,[c1_ng]
-            ,[c2_ng]
-            ,[c3_ng]
-            ,[c4_ng]
-            ,[c5_ng]
-            ,[ball_q]
-            ,[ball_ang]
-            ,[sep_ng_1]
-            ,[sep_ng_2]
-            ,[rtnr_ng]
-            ,[d1_ng]
-            ,[d2_ng]
-            ,[pre_p_ng]
-            ,[m_p_ng]
-            ,[press_check_ng]
-            ,[rtnr_camera_ng]
-            ,[cycle_t]
             ,[model]
             ,[spec]
-            ,[time_hr]
-            ,[time_min]
+            ,[avgct]
+            ,[eachct]
+            ,[yieldrt]
+            ,[ng_p]
+            ,[ng_n]
+            ,[tng]
+            ,[prod_total]
+            ,[utilization]
+            ,[utl_total]
+            ,[prod_s1]
+            ,[prod_s2]
+            ,[prod_s3]
+            ,[cth1]
+            ,[cth2]
+            ,[idh1]
+            ,[idh2]
+            ,[yield_ok]
+            ,[yield_ng_pos]
+            ,[yield_ng_neg]
+            ,[time_full]
+            ,[time_full1]
+            ,[time_wait]
+            ,[time_wait1]
+            ,[time_run]
+            ,[time_run1]
+            ,[time_alarm]
+            ,[time_alarm1]
+            ,[time_worn]
+            ,[time_worn1]
+            ,[time_warm]
+            ,[time_warm1]
+            ,[time_dress]
+            ,[time_dress1]
+            ,[time_other]
+            ,[time_other1]
+            ,[idl]
+            ,[hour]
+            ,[min]
             ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
-        FROM ${DATABASE_PROD}
-      ),
-      LatestAlarm AS (
-        SELECT
-            [mc_no],[alarm],[occurred],
-            ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
-        FROM ${DATABASE_ALARM}
-        WHERE [alarm] LIKE 'RUN%'
-      )
-      SELECT 
-          p.[mc_no],p.[registered],p.[process],p.[rssi],p.[daily_ok],p.[daily_ng],p.[daily_tt],
-          p.[c1_ok],p.[c2_ok],p.[c3_ok],p.[c4_ok],p.[c5_ok],
-          p.[c1_ng],p.[c2_ng],p.[c3_ng],p.[c4_ng],p.[c5_ng],
-          p.[ball_q],p.[ball_ang],p.[sep_ng_1],p.[sep_ng_2],p.[rtnr_ng],
-          p.[d1_ng],p.[d2_ng],p.[pre_p_ng],p.[m_p_ng],p.[press_check_ng],p.[rtnr_camera_ng],
-          p.[cycle_t] / 100 AS [cycle_t],p.[model],p.[spec],p.[time_hr],p.[time_min],
-          a.[alarm],a.[occurred]
-      FROM LatestProduction p
-      LEFT JOIN LatestAlarm a ON p.[mc_no] = a.[mc_no]
-      WHERE p.rn = 1
-        AND a.rn = 1
-      ORDER BY p.[mc_no];
-    `);
+            FROM ${DATABASE_PROD}
+            WHERE
+                [registered] >= DATEADD(day, -3, GETDATE()) AND [mc_no] LIKE 'ir%b'
+        ),
+        LatestAlarm AS (
+            SELECT
+            [mc_no]
+            ,[alarm]
+            ,[occurred]
+            ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
+            FROM ${DATABASE_ALARM}
+            WHERE
+                UPPER([alarm]) LIKE '%RUN%'
+                AND [occurred] >= DATEADD(day, -3, GETDATE()) AND [mc_no] LIKE 'ir%b'
+        )
+        SELECT 
+          p.[registered]
+          ,p.[mc_no]
+          ,p.[process]
+          ,p.[rssi]
+          ,p.[model]
+          ,p.[spec]
+          ,p.[avgct]
+          ,p.[eachct]
+          ,p.[yieldrt]
+          ,p.[ng_p]
+          ,p.[ng_n]
+          ,p.[tng]
+          ,p.[prod_total]
+          ,p.[utilization]
+          ,p.[utl_total]
+          ,p.[prod_s1]
+          ,p.[prod_s2]
+          ,p.[prod_s3]
+          ,p.[cth1]
+          ,p.[cth2]
+          ,p.[idh1]
+          ,p.[idh2]
+          ,p.[yield_ok]
+          ,p.[yield_ng_pos]
+          ,p.[yield_ng_neg]
+          ,p.[time_full]
+          ,p.[time_full1]
+          ,p.[time_wait]
+          ,p.[time_wait1]
+          ,p.[time_run]
+          ,p.[time_run1]
+          ,p.[time_alarm]
+          ,p.[time_alarm1]
+          ,p.[time_worn]
+          ,p.[time_worn1]
+          ,p.[time_warm]
+          ,p.[time_warm1]
+          ,p.[time_dress]
+          ,p.[time_dress1]
+          ,p.[time_other]
+          ,p.[time_other1]
+          ,p.[idl]
+          ,p.[hour]
+          ,p.[min]
+          ,ISNULL(a.[alarm], 'no data') AS [alarm]
+          ,a.[occurred]
+        FROM LatestProduction p
+        LEFT JOIN LatestAlarm a 
+            ON p.[mc_no] = a.[mc_no]
+            AND a.rn = 1
+        WHERE p.rn = 1
+        ORDER BY p.[mc_no];
+    `
+    );
 
     return mc_no[0];
   } catch (error) {
@@ -81,18 +142,40 @@ const master_mc_no = async () => {
   }
 };
 
-// โหลดค่าตั้งต้นจาก SQL มาครั้งแรก
-(async () => {
-  const initialData = await master_mc_no();
-  machineData = {};
-  initialData.forEach((row) => {
-    machineData[row.mc_no] = { ...row, source: "SQL" };
-  });
-  console.log("Initial machine data loaded:", Object.keys(machineData).length, "machines");
-})();
+const reloadMasterData = async () => {
+  console.log(`[${moment().format("HH:mm:ss")}] Reloading master data from SQL...`);
+  try {
+    const sqlDataArray = await master_mc_no();
+    if (!sqlDataArray) return;
+
+    const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
+
+    // 1. เพิ่ม/อัปเดตเครื่องจักรจาก SQL
+    for (const row of sqlDataArray) {
+      if (machineData.hasOwnProperty(row.mc_no)) {
+        machineData[row.mc_no] = {
+          ...machineData[row.mc_no],
+          ...row,
+        };
+      } else {
+        machineData[row.mc_no] = { ...row, source: "SQL" };
+      }
+    }
+
+    for (const mc_no in machineData) {
+      if (!sqlDataMap.has(mc_no)) {
+        console.log(`Machine removed from SQL: ${mc_no}. Deleting from cache.`);
+        delete machineData[mc_no];
+      }
+    }
+
+    console.log(`Master data reloaded. Total machines in cache: ${Object.keys(machineData).length}`);
+  } catch (error) {
+    console.error("Failed to reload master data:", error);
+  }
+};
 
 // MQTT connect
-const PORT = "1883";
 const client = mqtt.connect(`mqtt://${MQTT_SERVER}:${PORT}`);
 
 client.on("connect", () => {
@@ -102,7 +185,6 @@ client.on("connect", () => {
   });
 });
 
-// เวลา message เข้า → update ข้อมูลใน memory
 client.on("message", (topic, message) => {
   try {
     const mc_no = topic.split("/").pop();
@@ -110,49 +192,28 @@ client.on("message", (topic, message) => {
     if (machineData.hasOwnProperty(mc_no)) {
       const mqttData = JSON.parse(message.toString());
 
-      if (mqttData.hasOwnProperty("mc_no")) {
-        mqttData.mc_no = mqttData.mc_no.toUpperCase();
-      }
-
-      if (mqttData.hasOwnProperty("cycle_t")) {
-        mqttData.cycle_t = mqttData.cycle_t / 100;
-      }
-
-      if (machineData.hasOwnProperty(mc_no)) {
-        machineData[mc_no] = {
-          ...machineData[mc_no],
-          ...mqttData,
-          updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
-          source: "MQTT",
-        };
-      } else {
-        console.log(`New machine detected: ${mc_no}. Adding to cache.`);
-        machineData[mc_no] = {
-          ...mqttData,
-          registered: moment().format("YYYY-MM-DD HH:mm:ss"),
-          alarm: 'no data',
-          updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
-          source: "MQTT",
-        };
-      }
+      machineData[mc_no] = {
+        ...machineData[mc_no],
+        ...mqttData,
+        updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
+        source: "MQTT",
+      };
     }
   } catch (error) {
     console.error("MQTT Message Error: ", error);
   }
 });
 
-// API ให้ frontend มาเรียก
 router.get("/machines", async (req, res) => {
   try {
     let runningTime = await dbms.query(
       `
         DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} 07:00:00';
         DECLARE @end_date DATETIME = GETDATE();
-        DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);    -- เวลาที่ต้องการลบไป 2hr เพื่อดึง alarm ตัวก่อนหน้า --
-        DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);        -- เวลาที่ต้องการบวกไป 2hr เพื่อดึง alarm ตัวหลัง --
+        DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
+        DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
 
         WITH [base_alarm] AS (
-            -- เรียก data ทั้งหมด ก่อนและหลัง 1hr --
             SELECT
                 [mc_no],
             CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
@@ -166,10 +227,9 @@ router.get("/machines", async (req, res) => {
                     ELSE 'before'
                 END AS [alarm_type]
             FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] IN ('RUN', 'RUN_')
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_') AND [mc_no] LIKE 'ir%b'
         ),
         [with_pairing] AS (
-            -- จับคู่ alarm กับ alarm_ --
             SELECT *,
                 ISNULL(
                 LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
@@ -182,15 +242,14 @@ router.get("/machines", async (req, res) => {
             FROM [base_alarm]
         ),
         [paired_alarms] AS (
-            -- filter เฉพาะตัวที่มี alarm , alarm_ และ check ตัว alarm ที่เกิดซ้อนอยู่ใน alarm อีกตัว --
             SELECT
                 [mc_no],
                 [alarm_base],
-            CASE 
+            CASE
               WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
               ELSE [occurred]
             END AS [occurred_start],
-            CASE 
+            CASE
               WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
               ELSE [occurred_next]
             END AS [occurred_end]
@@ -224,7 +283,7 @@ router.get("/machines", async (req, res) => {
       let status_alarm;
       if (item.broker === 0 || moment().diff(moment(item.occurred), "minutes") > 10 || item.occurred === null) {
         status_alarm = "SIGNAL LOSE";
-      } else if (item.alarm.includes("RUN") && item.alarm.slice(-1) !== "_") {
+      } else if (item.alarm.toUpperCase().includes("RUN") && item.alarm.slice(-1) !== "_") {
         status_alarm = "RUNNING";
       } else if (item.alarm?.slice(-1) === "_") {
         status_alarm = "STOP";
@@ -250,16 +309,10 @@ router.get("/machines", async (req, res) => {
       let target = 0;
       let target_ct = 0;
 
-      if (item.model.includes("R-830")) {
-        target = Number((47500 * (runInfo?.total_time || 0) / 86400).toFixed(0));
-        target_ct = 1.6;
-      }
-
       // เปลี่ยนชื่อใหม่เหมือนๆกัน
-      const prod_ok = item.daily_ok || 0;
-      const prod_ng = item.daily_ng || 0;
-      const cycle_t = item.cycle_t || 0;
-      
+      const prod_ok = item.prod_total || 0;
+      const prod_ng = item.ng_p + item.ng_n + item.tng || 0;
+      const cycle_t = item.eachct / 100 || 0;
 
       return {
         ...item,
@@ -273,7 +326,7 @@ router.get("/machines", async (req, res) => {
         total_time: runInfo?.total_time || 0,
         opn,
         target,
-        target_ct
+        target_ct,
       };
     });
 
@@ -299,12 +352,16 @@ router.get("/machines", async (req, res) => {
     res.json({
       success: true,
       data: dataArray,
-      resultSummary
+      resultSummary,
     });
   } catch (error) {
     console.error("API Error: ", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
+
+reloadMasterData();
+
+setInterval(reloadMasterData, 300000);
 
 module.exports = router;
