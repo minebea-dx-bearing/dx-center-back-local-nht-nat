@@ -173,14 +173,12 @@ const reloadMasterData = async () => {
 
 // MQTT connect
 const client = mqtt.connect(`mqtt://${MQTT_SERVER}:${PORT}`);
-
 client.on("connect", () => {
   console.log("MQTT Connected");
   client.subscribe("#", (err) => {
     if (!err) console.log("Subscribed to all topics (#)");
   });
 });
-
 client.on("message", (topic, message) => {
   try {
     const mc_no = topic.split("/").pop();
@@ -200,10 +198,9 @@ client.on("message", (topic, message) => {
   }
 });
 
-router.get("/machines", async (req, res) => {
-  try {
-    let runningTime = await dbms.query(
-      `
+const queryCurrentRunningTime = async () => {
+  const result = await dbms.query(
+    `
         DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} 07:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
@@ -266,98 +263,174 @@ router.get("/machines", async (req, res) => {
           DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
         GROUP BY [mc_no]
-      `
-    );
+    `
+  );
+  return result[1] > 0 ? result[0] : [];
+};
 
-    if (runningTime[1] > 0) {
-      runningTime = runningTime[0];
+const prepareRealtimeData = (currentMachineData, runningTimeData) => {
+  return Object.values(currentMachineData).map((item) => {
+    let status_alarm;
+    if (!item.occurred || moment().diff(moment(item.occurred), "minutes") > 10) {
+      status_alarm = "SIGNAL LOSE";
+    } else if (item.alarm?.toUpperCase().includes("RUN") && !item.alarm.endsWith("_")) {
+      status_alarm = "RUNNING";
+    } else if (item.alarm?.endsWith("_")) {
+      status_alarm = "STOP";
     } else {
-      runningTime = [];
+      status_alarm = item.alarm;
     }
 
-    const dataArray = Object.values(machineData).map((item) => {
-      let status_alarm;
-      if (item.broker === 0 || moment().diff(moment(item.occurred), "minutes") > 10 || item.occurred === null) {
-        status_alarm = "SIGNAL LOSE";
-      } else if (item.alarm.toUpperCase().includes("RUN") && item.alarm.slice(-1) !== "_") {
-        status_alarm = "RUNNING";
-      } else if (item.alarm?.slice(-1) === "_") {
-        status_alarm = "STOP";
-      } else {
-        status_alarm = item.alarm;
-      }
+    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    const sum_run = runInfo.sum_duration || 0;
+    const total_time = runInfo.total_time || 0;
+    const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-      const runInfo = runningTime.find((rt) => rt.mc_no === item.mc_no);
+    // target ชั่วคราว
+    let target = 0;
+    let target_ct = 0;
 
-      let opn = 0;
-      let sum_run = 0;
-      let total_time = 0;
+    // เปลี่ยนชื่อใหม่เหมือนๆกัน
+    const prod_ok = item.prod_pos4 + item.prod_pos6 || 0;
+    const prod_ng = 0;
+    const cycle_t = item.cycle_time / 100 || 0;
 
-      if (runInfo) {
-        sum_run = runInfo.sum_duration;
-        total_time = runInfo.total_time;
-        if (total_time > 0) {
-          opn = Number(((sum_run / total_time) * 100).toFixed(2));
-        }
-      }
-
-      // target ชั่วคราว
-      let target = 0;
-      let target_ct = 0;
-
-      // เปลี่ยนชื่อใหม่เหมือนๆกัน
-      const prod_ok = item.prod_ok || 0;
-      const prod_ng = 0;
-      const cycle_t = item.cycle_time / 100 || 0;
-
-      return {
-        ...item,
-        mc_no: item.mc_no.toUpperCase(),
-        yield_per: prod_ok + prod_ng === 0 ? 0 : Number(((prod_ok / (prod_ok + prod_ng)) * 100).toFixed(2)),
-        status_alarm,
-        prod_ok,
-        prod_ng,
-        cycle_t,
-        sum_run: runInfo?.sum_duration || 0,
-        total_time: runInfo?.total_time || 0,
-        opn,
-        target,
-        target_ct,
-      };
-    });
-
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.target || 0;
-        acc.total_ok += item.prod_ok || 0;
-        acc.total_cycle_t += item.cycle_t || 0;
-        acc.total_opn += item.opn || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 }
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
+    return {
+      ...item,
+      mc_no: item.mc_no.toUpperCase(),
+      status_alarm,
+      prod_ok,
+      prod_ng,
+      cycle_t,
+      sum_run,
+      total_time,
+      opn,
     };
+  });
+};
 
-    res.json({
-      success: true,
-      data: dataArray,
-      resultSummary,
-    });
+// router.get("/machines", async (req, res) => {
+//   try {
+//     let runningTimeResult = await dbms.query(
+//       `
+//         DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} 07:00:00';
+//         DECLARE @end_date DATETIME = GETDATE();
+//         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
+//         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+
+//         WITH [base_alarm] AS (
+//             SELECT
+//                 [mc_no],
+//             CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
+//                 [alarm],
+//                 CASE
+//                     WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
+//                     ELSE [alarm]
+//                 END AS [alarm_base],
+//                 CASE
+//                     WHEN RIGHT([alarm], 1) = '_' THEN 'after'
+//                     ELSE 'before'
+//                 END AS [alarm_type]
+//             FROM ${DATABASE_ALARM}
+//             WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_'
+//         ),
+//         [with_pairing] AS (
+//             SELECT *,
+//                 ISNULL(
+//                 LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
+//                 @end_date
+//             ) AS [occurred_next],
+//             ISNULL(
+//                 LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
+//                 'after'
+//             ) AS [next_type]
+//             FROM [base_alarm]
+//         ),
+//         [paired_alarms] AS (
+//             SELECT
+//                 [mc_no],
+//                 [alarm_base],
+//             CASE
+//               WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
+//               ELSE [occurred]
+//             END AS [occurred_start],
+//             CASE
+//               WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
+//               ELSE [occurred_next]
+//             END AS [occurred_end]
+//             FROM [with_pairing]
+//             WHERE [alarm_type] = 'before' AND [next_type] = 'after'
+//         ),
+//         [filter_time] AS (
+//           SELECT
+//             *,
+//             DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
+//           FROM [paired_alarms]
+//           WHERE [occurred_end] > [occurred_start]
+//         )
+
+//         SELECT
+//           [mc_no],
+//           SUM([duration_seconds]) AS [sum_duration],
+//           DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
+//         FROM [filter_time]
+//         GROUP BY [mc_no]
+//       `
+//     );
+
+//     const runningTime = runningTimeResult[1] > 0 ? runningTimeResult[0] : [];
+
+//     const dataArray = prepareRealtimeData(machineData, runningTime);
+
+//     const summary = dataArray.reduce(
+//       (acc, item) => {
+//         acc.total_target += item.target || 0;
+//         acc.total_ok += item.prod_ok || 0;
+//         acc.total_cycle_t += item.cycle_t || 0;
+//         acc.total_opn += item.opn || 0;
+//         acc.count += 1;
+//         return acc;
+//       },
+//       { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 }
+//     );
+
+//     const resultSummary = {
+//       sum_target: summary.total_target,
+//       sum_daily_ok: summary.total_ok,
+//       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
+//       avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
+//     };
+
+//     res.json({
+//       success: true,
+//       data: dataArray,
+//       resultSummary,
+//     });
+//   } catch (error) {
+//     console.error("API Error in /machines: ", error);
+//     return res.status(500).json({ success: false, message: "Internal Server Error" });
+//   }
+// });
+
+router.get("/machines", async (req, res) => {
+  try {
+    const runningTime = await queryCurrentRunningTime();
+    const dataArray = prepareRealtimeData(machineData, runningTime);
+    res.json({ success: true, data: dataArray });
   } catch (error) {
-    console.error("API Error: ", error);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+    console.error("API Error in /machines: ", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
 
 reloadMasterData();
-
 setInterval(reloadMasterData, 300000);
 
-module.exports = router;
+// module.exports = router;
+
+module.exports = {
+  router,
+  prepareRealtimeData,
+  queryCurrentRunningTime,
+  getMachineData: () => machineData,
+};
