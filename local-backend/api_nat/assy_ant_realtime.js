@@ -10,11 +10,11 @@ const master_mc_no = require("../util/mqtt_master_mc_no");
 let machineData = {};
 
 // --- Configurations ---
-const process = "TN";
-const MQTT_SERVER = "10.128.16.110";
+const process = "ANT";
+const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
-const DATABASE_PROD = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
+const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
+const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
@@ -171,9 +171,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     let target_ct = 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.prod_pos4 + item.prod_pos6 || 0;
-    const prod_ng = 0;
-    const cycle_t = item.cycle_time / 100 || 0;
+    const prod_ok = item.front_ok + item.rear_ok || 0;
+    const prod_ng = item.front_ag + item.rear_ag || 0;
+    const cycle_t = item.rear_cycle_t / 100 || 0;
+
+    const front_cycle_t = item.front_cycle_t / 100 || 0;
+    const rear_cycle_t = item.rear_cycle_t / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(7);
@@ -199,6 +202,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      front_cycle_t,
+      rear_cycle_t,
     };
   });
 };

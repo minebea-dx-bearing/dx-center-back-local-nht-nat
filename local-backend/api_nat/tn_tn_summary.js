@@ -1,9 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const dbms = require("../instance/ms_instance_nat");
-const mqtt = require("mqtt");
 const moment = require("moment");
-const axios = require("axios");
 const { prepareRealtimeData, getMachineData, queryCurrentRunningTime } = require("./tn_tn_realtime");
 
 const processChartData = (rawData, dataKey) => {
@@ -55,18 +53,6 @@ const calculateSummary = (dataForToday) => {
   }
   return summary;
 };
-
-// const getWorkingDate = (inputDate) => {
-//   const dateToCheck = moment(inputDate);
-
-//   const cutoffTime = dateToCheck.clone().hour(5).minute(10).second(0);
-
-//   if (dateToCheck.isBefore(cutoffTime)) {
-//     return dateToCheck.subtract(1, "days").format("YYYY-MM-DD");
-//   } else {
-//     return dateToCheck.format("YYYY-MM-DD");
-//   }
-// };
 
 router.post("/data", async (req, res) => {
   let { dateQuery } = req.body;
