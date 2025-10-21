@@ -172,18 +172,23 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.shield_ok + item.grease_ok || 0;
-    const prod_ng = item.shield_a_ng + item.shield_b_ng + item.snap_b_ng + item.ro1_ng + item.ro2_ng + item.grease_ng || 0;
+    const prod_ng = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng + item.ro1_ng + item.ro2_ng + item.grease_ng || 0;
     const cycle_t = item.cycle_t / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(7);
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
-
+    
     const diff_prod = prod_ok - target_actual;
     const diff_ct = cycle_t - target_ct;
 
+    const yield_rate = Number((prod_ok / (prod_ok + prod_ng) * 100 || 0).toFixed(2));
+
     const diff_prod_grease = item.grease_ok - target_actual;
     const diff_prod_shield = item.shield_ok - target_actual;
+
+    const yield_grease = Number((item.grease_ok / (item.grease_ok +item.ro1_ng + item.ro2_ng + item.grease_ng) * 100 || 0).toFixed(2));
+    const yield_shield = Number((item.shield_ok / (item.shield_ok + item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng) * 100 || 0).toFixed(2));
 
     return {
       ...item,
@@ -198,6 +203,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       diff_prod_shield,
       prod_ok,
       prod_ng,
+      yield_rate,
+      yield_grease,
+      yield_shield,
       target_ct,
       diff_ct,
       cycle_t,

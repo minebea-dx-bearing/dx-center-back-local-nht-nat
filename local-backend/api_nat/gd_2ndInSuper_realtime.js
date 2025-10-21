@@ -182,6 +182,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const diff_prod = prod_ok - target_actual;
     const diff_ct = cycle_t - target_ct;
 
+    const yield_rate = Number((prod_ok / (prod_ok + prod_ng) * 100 || 0).toFixed(2));
+
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),
@@ -193,6 +195,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       diff_prod,
       prod_ok,
       prod_ng,
+      yield_rate,
       target_ct,
       diff_ct,
       cycle_t,

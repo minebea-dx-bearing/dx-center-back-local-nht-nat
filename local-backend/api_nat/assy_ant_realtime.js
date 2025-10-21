@@ -153,7 +153,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       status_alarm = "SIGNAL LOSE";
     } else if (item.occurred === null) {
       status_alarm = "NO DATA RUN";
-    } else if (item.alarm?.toUpperCase().includes("RUN") && !item.alarm.endsWith("_") || item.status?.toUpperCase().includes("RUN") && !item.status.endsWith("_")) {
+    } else if (
+      (item.alarm?.toUpperCase().includes("RUN") && !item.alarm.endsWith("_")) ||
+      (item.status?.toUpperCase().includes("RUN") && !item.status.endsWith("_"))
+    ) {
       status_alarm = "RUNNING";
     } else if (!item.status?.endsWith("_")) {
       status_alarm = item.status;
@@ -172,8 +175,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.front_ok + item.rear_ok || 0;
-    const prod_ng = item.front_ag + item.rear_ag || 0;
-    const cycle_t = item.rear_cycle_t / 100 || 0;
+    const prod_ng = item.front_ag + item.front_ng + item.front_mixball + item.rear_ag + item.rear_ng + item.rear_mixball || 0;
+    const cycle_t = (item.front_cycle_t + item.rear_cycle_t) / 2 / 100 || 0;
 
     const front_cycle_t = item.front_cycle_t / 100 || 0;
     const rear_cycle_t = item.rear_cycle_t / 100 || 0;
@@ -183,7 +186,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
     const diff_prod = prod_ok - target_actual;
-    const diff_ct = cycle_t - target_ct;
+    const diff_ct = Number((cycle_t - target_ct).toFixed(2));
+
+    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
+
+    const diff_prod_front = item.front_ok - target_actual;
+    const diff_prod_rear = item.rear_ok - target_actual;
+
+    const diff_ct_front = Number((item.front_cycle_t - target_ct).toFixed(2));
+    const diff_ct_rear = Number((item.rear_cycle_t - target_ct).toFixed(2));
 
     return {
       ...item,
@@ -194,10 +205,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       target,
       target_actual,
       diff_prod,
+      diff_prod_front,
+      diff_prod_rear,
       prod_ok,
       prod_ng,
+      yield_rate,
       target_ct,
       diff_ct,
+      diff_ct_front,
+      diff_ct_rear,
       cycle_t,
       sum_run,
       total_time,
