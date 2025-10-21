@@ -148,12 +148,19 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm;
+    let status_alarm = "NO DATA";
     if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
       status_alarm = "SIGNAL LOSE";
     } else if (item.occurred === null) {
       status_alarm = "NO DATA RUN";
-    } else if (item.alarm?.toUpperCase().includes("RUN") && !item.alarm.endsWith("_") || item.status?.toUpperCase().includes("RUN") && !item.status.endsWith("_")) {
+    } else if (item.status?.toUpperCase().includes("RUN")) {
+      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
+      if (!item.status?.endsWith("_")) {
+        status_alarm = "RUNNING";
+      } else {
+        status_alarm = "STOP";
+      }
+    } else if (item.alarm?.toUpperCase().includes("RUN") && !item.alarm?.endsWith("_")) {
       status_alarm = "RUNNING";
     } else if (!item.status?.endsWith("_")) {
       status_alarm = item.status;
@@ -178,17 +185,19 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(7);
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
-    
+
     const diff_prod = prod_ok - target_actual;
     const diff_ct = cycle_t - target_ct;
 
-    const yield_rate = Number((prod_ok / (prod_ok + prod_ng) * 100 || 0).toFixed(2));
+    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
     const diff_prod_grease = item.grease_ok - target_actual;
     const diff_prod_shield = item.shield_ok - target_actual;
 
-    const yield_grease = Number((item.grease_ok / (item.grease_ok +item.ro1_ng + item.ro2_ng + item.grease_ng) * 100 || 0).toFixed(2));
-    const yield_shield = Number((item.shield_ok / (item.shield_ok + item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng) * 100 || 0).toFixed(2));
+    const yield_grease = Number(((item.grease_ok / (item.grease_ok + item.ro1_ng + item.ro2_ng + item.grease_ng)) * 100 || 0).toFixed(2));
+    const yield_shield = Number(
+      ((item.shield_ok / (item.shield_ok + item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng)) * 100 || 0).toFixed(2)
+    );
 
     return {
       ...item,

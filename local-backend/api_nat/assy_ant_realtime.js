@@ -4,7 +4,7 @@ const dbms = require("../instance/ms_instance_nat");
 const mqtt = require("mqtt");
 const moment = require("moment");
 
-const master_mc_no = require("../util/mqtt_master_mc_no");
+const master_mc_no_front_rear = require("../util/mqtt_master_mc_no_front_rear");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -19,7 +19,7 @@ const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARM
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
   try {
-    const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM);
+    const sqlDataArray = await master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_ALARM);
     if (!sqlDataArray) return;
 
     const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
@@ -98,7 +98,7 @@ const queryCurrentRunningTime = async () => {
                     ELSE 'before'
                 END AS [alarm_type]
             FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_'
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE 'RUN REAR' OR [alarm] LIKE 'RUN REAR_' OR [alarm] LIKE 'RUN FRONT' OR [alarm] LIKE 'RUN FRONT_')
         ),
         [with_pairing] AS (
             SELECT *,
@@ -137,10 +137,11 @@ const queryCurrentRunningTime = async () => {
 
         SELECT
           [mc_no],
-          SUM([duration_seconds]) AS [sum_duration],
-          DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
+          [alarm_base],
+            SUM([duration_seconds]) AS [sum_duration],
+            DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
-        GROUP BY [mc_no]
+        GROUP BY [mc_no], [alarm_base]
     `
   );
   return result[1] > 0 ? result[0] : [];
@@ -148,26 +149,60 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm;
+    let status_alarm_front = "NO DATA";
     if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
-      status_alarm = "SIGNAL LOSE";
-    } else if (item.occurred === null) {
-      status_alarm = "NO DATA RUN";
-    } else if (
-      (item.alarm?.toUpperCase().includes("RUN") && !item.alarm.endsWith("_")) ||
-      (item.status?.toUpperCase().includes("RUN") && !item.status.endsWith("_"))
-    ) {
-      status_alarm = "RUNNING";
+      status_alarm_front = "SIGNAL LOSE";
+    } else if (item.occurred_front === null) {
+      status_alarm_front = "NO DATA RUN";
+    } else if (item.status?.toUpperCase().includes("RUN")) {
+      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
+      if (!item.status?.endsWith("_")) {
+        status_alarm_front = "RUNNING";
+      } else {
+        status_alarm_front = "STOP";
+      }
+    } else if (item.alarm_front?.toUpperCase().includes("RUN") && !item.alarm_front?.endsWith("_")) {
+      status_alarm_front = "RUNNING";
     } else if (!item.status?.endsWith("_")) {
-      status_alarm = item.status;
+      status_alarm_front = item.status;
     } else {
-      status_alarm = "STOP";
+      status_alarm_front = "STOP";
+    }
+
+    let status_alarm_rear = "NO DATA";
+    if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
+      status_alarm_rear = "SIGNAL LOSE";
+    } else if (item.occurred_rear === null) {
+      status_alarm_rear = "NO DATA RUN";
+    } else if (item.status?.toUpperCase().includes("RUN")) {
+      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
+      if (!item.status?.endsWith("_")) {
+        status_alarm_rear = "RUNNING";
+      } else {
+        status_alarm_rear = "STOP";
+      }
+    } else if (item.alarm_rear?.toUpperCase().includes("RUN") && !item.alarm_rear?.endsWith("_")) {
+      status_alarm_rear = "RUNNING";
+    } else if (!item.status?.endsWith("_")) {
+      status_alarm_rear = item.status;
+    } else {
+      status_alarm_rear = "STOP";
     }
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
+
+    const runInfoFront = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN FRONT") || {};
+    const sum_run_front = runInfoFront.sum_duration || 0;
+    const total_time_front = runInfoFront.total_time || 0;
+    const opn_front = total_time_front > 0 ? Number(((sum_run_front / total_time_front) * 100).toFixed(2)) : 0;
+
+    const runInfoRear = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN REAR") || {};
+    const sum_run_rear = runInfoRear.sum_duration || 0;
+    const total_time_rear = runInfoRear.total_time || 0;
+    const opn_rear = total_time_rear > 0 ? Number(((sum_run_rear / total_time_rear) * 100).toFixed(2)) : 0;
 
     // target ชั่วคราว
     let target = 0;
@@ -204,7 +239,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
-      status_alarm,
+      status_alarm_front,
+      status_alarm_rear,
       target,
       target_actual,
       diff_prod,
@@ -223,6 +259,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      sum_run_front,
+      total_time_front,
+      opn_front,
+      sum_run_rear,
+      total_time_rear,
+      opn_rear,
       front_cycle_t,
       rear_cycle_t,
     };
