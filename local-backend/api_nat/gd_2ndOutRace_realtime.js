@@ -5,6 +5,7 @@ const mqtt = require("mqtt");
 const moment = require("moment");
 
 const master_mc_no = require("../util/mqtt_master_mc_no");
+const determineMachineStatus = require("../util/determineMachineStatus");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -148,25 +149,7 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm = "NO DATA";
-    if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
-      status_alarm = "SIGNAL LOSE";
-    } else if (item.occurred === null) {
-      status_alarm = "NO DATA RUN";
-    } else if (item.status?.toUpperCase().includes("RUN")) {
-      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
-      if (!item.status?.endsWith("_")) {
-        status_alarm = "RUNNING";
-      } else {
-        status_alarm = "STOP";
-      }
-    } else if (item.alarm?.toUpperCase().includes("RUN") && !item.alarm?.endsWith("_")) {
-      status_alarm = "RUNNING";
-    } else if (!item.status?.endsWith("_")) {
-      status_alarm = item.status;
-    } else {
-      status_alarm = "STOP";
-    }
+    let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;

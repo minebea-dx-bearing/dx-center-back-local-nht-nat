@@ -5,6 +5,7 @@ const mqtt = require("mqtt");
 const moment = require("moment");
 
 const master_mc_no_front_rear = require("../util/mqtt_master_mc_no_front_rear");
+const determineMachineStatus = require("../util/determineMachineStatus");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -149,45 +150,8 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm_front = "NO DATA";
-    if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
-      status_alarm_front = "SIGNAL LOSE";
-    } else if (item.occurred_front === null) {
-      status_alarm_front = "NO DATA RUN";
-    } else if (item.status?.toUpperCase().includes("RUN")) {
-      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
-      if (!item.status?.endsWith("_")) {
-        status_alarm_front = "RUNNING";
-      } else {
-        status_alarm_front = "STOP";
-      }
-    } else if (item.alarm_front?.toUpperCase().includes("RUN") && !item.alarm_front?.endsWith("_")) {
-      status_alarm_front = "RUNNING";
-    } else if (!item.status?.endsWith("_")) {
-      status_alarm_front = item.status;
-    } else {
-      status_alarm_front = "STOP";
-    }
-
-    let status_alarm_rear = "NO DATA";
-    if (item.broker === 0 || item.updated_at === undefined || moment().diff(moment(item.updated_at), "minutes") > 10) {
-      status_alarm_rear = "SIGNAL LOSE";
-    } else if (item.occurred_rear === null) {
-      status_alarm_rear = "NO DATA RUN";
-    } else if (item.status?.toUpperCase().includes("RUN")) {
-      // status RUN กับ RUN_ บน MQTT ต้องมาเป็นอันดับแรก
-      if (!item.status?.endsWith("_")) {
-        status_alarm_rear = "RUNNING";
-      } else {
-        status_alarm_rear = "STOP";
-      }
-    } else if (item.alarm_rear?.toUpperCase().includes("RUN") && !item.alarm_rear?.endsWith("_")) {
-      status_alarm_rear = "RUNNING";
-    } else if (!item.status?.endsWith("_")) {
-      status_alarm_rear = item.status;
-    } else {
-      status_alarm_rear = "STOP";
-    }
+    const status_alarm_front = determineMachineStatus(item, item.alarm_front, item.occurred_front);
+    const status_alarm_rear = determineMachineStatus(item, item.alarm_rear, item.occurred_rear);
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
