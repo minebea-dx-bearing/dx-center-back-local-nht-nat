@@ -178,7 +178,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     let target_ct = 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.shield_ok + item.grease_ok || 0;
+    const prod_ok = item.shield_ok || 0;
     const prod_ng = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng + item.ro1_ng + item.ro2_ng + item.grease_ng || 0;
     const cycle_t = item.cycle_t / 100 || 0;
 
