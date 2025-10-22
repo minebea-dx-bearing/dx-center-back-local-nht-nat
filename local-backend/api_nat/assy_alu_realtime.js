@@ -5,7 +5,6 @@ const mqtt = require("mqtt");
 const moment = require("moment");
 
 const master_mc_no = require("../util/mqtt_master_mc_no");
-const { stat } = require("fs");
 const determineMachineStatus = require("../util/determineMachineStatus");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
@@ -17,11 +16,12 @@ const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
 const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
+const DATABASE_MASTER = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
   try {
-    const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM);
+    const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER);
     if (!sqlDataArray) return;
 
     const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
@@ -150,16 +150,15 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm = determineMachineStatus(item, item.alarm, item.occurred)
+    let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-    // target ชั่วคราว
-    let target = 0;
-    let target_ct = 0;
+    let target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100)) || 0;
+    let target_ct = item.target_ct || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.prod_cnt || 0;

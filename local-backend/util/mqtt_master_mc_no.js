@@ -5,7 +5,7 @@
  * @param {string} DATABASE_ALARM - ชื่อตาราง Alarm
  * @returns {Promise<Array>} - Array ของข้อมูลเครื่องจักร
  */
-const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM) => {
+const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER) => {
   try {
     const result = await dbms.query(
       `
@@ -26,17 +26,34 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM) => {
             WHERE
                 UPPER([alarm]) LIKE '%RUN%'
                 AND [occurred] >= DATEADD(day, -3, GETDATE())
-        )
-        SELECT 
-            p.*, -- เลือกทุกคอลัมน์จาก Production
-            ISNULL(a.[alarm], 'no data') AS [alarm],
-            a.[occurred]
-        FROM LatestProduction p
-        LEFT JOIN LatestAlarm a 
-            ON p.[mc_no] = a.[mc_no]
-            AND a.rn = 1
-        WHERE p.rn = 1
-        ORDER BY p.[mc_no];
+        ),
+        MasterTarget AS (
+            SELECT
+              [mc_no],
+              [part_no],
+              [target_ct],
+              [target_utl],
+              [target_yield],
+              ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+            FROM ${DATABASE_MASTER}
+          )
+          SELECT 
+              p.*, -- เลือกทุกคอลัมน์จาก Production
+              ISNULL(a.[alarm], 'no data') AS [alarm],
+              a.[occurred],
+              ISNULL(m.[part_no], 0) AS [part_no],
+              ISNULL(m.[target_ct], 0) AS [target_ct],
+              ISNULL(m.[target_utl], 0) AS [target_utl],
+              ISNULL(m.[target_yield], 0) AS [target_yield]
+          FROM LatestProduction p
+          LEFT JOIN LatestAlarm a 
+              ON p.[mc_no] = a.[mc_no]
+              AND a.rn = 1
+          LEFT JOIN MasterTarget m
+            ON p.[mc_no] = m.[mc_no]
+            AND m.rn = 1
+          WHERE p.rn = 1
+          ORDER BY p.[mc_no];
       `
     );
 
