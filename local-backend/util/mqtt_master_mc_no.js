@@ -34,6 +34,8 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
               [target_ct],
               [target_utl],
               [target_yield],
+              [target_special],
+	            [ring_factor],
               ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
             FROM ${DATABASE_MASTER}
           )
@@ -44,7 +46,9 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
               ISNULL(m.[part_no], 0) AS [part_no],
               ISNULL(m.[target_ct], 0) AS [target_ct],
               ISNULL(m.[target_utl], 0) AS [target_utl],
-              ISNULL(m.[target_yield], 0) AS [target_yield]
+              ISNULL(m.[target_yield], 0) AS [target_yield],
+              ISNULL(m.[target_special], 0) AS [target_special],
+	            ISNULL(m.[ring_factor], 0) AS [ring_factor]
           FROM LatestProduction p
           LEFT JOIN LatestAlarm a 
               ON p.[mc_no] = a.[mc_no]

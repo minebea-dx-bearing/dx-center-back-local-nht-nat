@@ -14,6 +14,7 @@ let machineData = {};
 const process = "AVS";
 const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
+const startTime = 6; // start time 06:00
 const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
@@ -82,7 +83,7 @@ client.on("message", (topic, message) => {
 const queryCurrentRunningTime = async () => {
   const result = await dbms.query(
     `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} 07:00:00';
+        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
@@ -158,7 +159,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-    let target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100)) || 0;
+    let target =
+      item.target_special > 0
+        ? item.target_special
+        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     let target_ct = item.target_ct || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
@@ -167,7 +171,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const cycle_t = item.cycle_t / 100 || 0;
 
     const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(7);
+    const start_time = moment().startOf("day").hour(startTime);
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
     const diff_prod = prod_ok - target_actual;
