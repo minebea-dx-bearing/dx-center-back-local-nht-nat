@@ -181,10 +181,11 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const diff_prod_grease = item.grease_ok - target_actual;
     const diff_prod_shield = item.shield_ok - target_actual;
 
-    const yield_grease = Number(((item.grease_ok / (item.grease_ok + item.ro1_ng + item.ro2_ng + item.grease_ng)) * 100 || 0).toFixed(2));
-    const yield_shield = Number(
-      ((item.shield_ok / (item.shield_ok + item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng)) * 100 || 0).toFixed(2)
-    );
+    const prod_ng_grease = item.ro1_ng + item.ro2_ng + item.grease_ng;
+    const prod_ng_shield = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng;
+
+    const yield_grease = Number(((item.grease_ok / (item.grease_ok + prod_ng_grease)) * 100 || 0).toFixed(2));
+    const yield_shield = Number(((item.shield_ok / (item.shield_ok + prod_ng_shield)) * 100 || 0).toFixed(2));
 
     const downtime_seconds = total_time - sum_run;
     const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
@@ -215,6 +216,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      prod_ng_grease,
+      prod_ng_shield,
       downtime_seconds,
       availability,
       performance_grease,
