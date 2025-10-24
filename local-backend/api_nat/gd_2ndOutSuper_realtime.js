@@ -206,7 +206,7 @@ router.get("/machines", async (req, res) => {
     const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("OR") && item.mc_no.endsWith("H"));
     const summary = dataArray.reduce(
       (acc, item) => {
-        acc.total_target += item.target || 0;
+        acc.total_target += item.target_actual || 0;
         acc.total_ok += item.prod_ok || 0;
         acc.total_cycle_t += item.cycle_t || 0;
         acc.total_opn += item.opn || 0;

@@ -256,7 +256,7 @@ router.get("/machines", async (req, res) => {
     );
 
     const resultSummary = {
-      sum_target: summary.total_target,
+      sum_target: summary.target_actual,
       sum_daily_ok: summary.total_ok,
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
       avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
