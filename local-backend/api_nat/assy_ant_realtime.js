@@ -199,6 +199,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const diff_ct_front = Number((front_cycle_t - target_ct).toFixed(2));
     const diff_ct_rear = Number((rear_cycle_t - target_ct).toFixed(2));
 
+    const prod_ng_front = item.front_ag + item.front_ng + item.front_mixball;
+    const prod_ng_rear = item.rear_ag + item.rear_ng + item.rear_mixball;
+
     const yield_front = Number(((item.front_ok / (item.front_ok + item.front_ag + item.front_ng + item.front_mixball)) * 100 || 0).toFixed(2));
     const yield_rear = Number(((item.rear_ok / (item.rear_ok + item.rear_ag + item.rear_ng + item.rear_mixball)) * 100 || 0).toFixed(2));
 
@@ -237,6 +240,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      prod_ng_front,
+      prod_ng_rear,
       sum_run_front,
       total_time_front,
       opn_front,
