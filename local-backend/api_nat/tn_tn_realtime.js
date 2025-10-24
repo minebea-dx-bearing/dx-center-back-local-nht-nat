@@ -84,7 +84,6 @@ const queryCurrentRunningTime = async () => {
     `
         DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
-        DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
 
