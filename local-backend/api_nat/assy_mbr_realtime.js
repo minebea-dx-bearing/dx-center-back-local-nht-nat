@@ -82,7 +82,7 @@ client.on("message", (topic, message) => {
 const queryCurrentRunningTime = async () => {
   const result = await dbms.query(
     `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
+        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
@@ -164,7 +164,6 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
         : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     let target_ct = item.target_ct || 0;
 
-
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.daily_ok || 0;
     const prod_ng = item.daily_ng || 0;
@@ -178,6 +177,11 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const diff_ct = Number((cycle_t - target_ct).toFixed(2));
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
+
+    const downtime_seconds = total_time - sum_run;
+    const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
+    const performance = Number((prod_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
 
     return {
       ...item,
@@ -197,6 +201,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      downtime_seconds,
+      availability,
+      performance,
+      oee,
     };
   });
 };

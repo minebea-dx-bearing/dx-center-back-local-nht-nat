@@ -82,7 +82,7 @@ client.on("message", (topic, message) => {
 const queryCurrentRunningTime = async () => {
   const result = await dbms.query(
     `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
+        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
@@ -186,6 +186,13 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       ((item.shield_ok / (item.shield_ok + item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng)) * 100 || 0).toFixed(2)
     );
 
+    const downtime_seconds = total_time - sum_run;
+    const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
+    const performance_grease = Number((item.grease_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const performance_shield = Number((item.shield_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (yield_grease / 100) * 100).toFixed(2)) || 0;
+    const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (yield_shield / 100) * 100).toFixed(2)) || 0;
+
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),
@@ -208,6 +215,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      downtime_seconds,
+      availability,
+      performance_grease,
+      performance_shield,
+      oee_grease,
+      oee_shield,
     };
   });
 };

@@ -179,6 +179,11 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
+    const downtime_seconds = total_time - sum_run;
+    const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
+    const performance = Number((prod_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
+    
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),
@@ -197,6 +202,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run,
       total_time,
       opn,
+      downtime_seconds,
+      availability,
+      performance,
+      oee,
     };
   });
 };

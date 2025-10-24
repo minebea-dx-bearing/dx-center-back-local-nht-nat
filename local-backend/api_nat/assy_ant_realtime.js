@@ -202,6 +202,16 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const yield_front = Number(((item.front_ok / (item.front_ok + item.front_ag + item.front_ng + item.front_mixball)) * 100 || 0).toFixed(2));
     const yield_rear = Number(((item.rear_ok / (item.rear_ok + item.rear_ag + item.rear_ng + item.rear_mixball)) * 100 || 0).toFixed(2));
 
+    const downtime_seconds_front = total_time_front - sum_run_front;
+    const availability_front = Number(((sum_run_front / total_time_front) * 100).toFixed(2)) || 0;
+    const performance_front = Number((item.front_ok / (total_time_front / target_ct)).toFixed(2)) * 100 || 0;
+    const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (yield_front / 100) * 100).toFixed(2)) || 0;
+
+    const downtime_seconds_rear = total_time_rear - sum_run_rear;
+    const availability_rear = Number(((sum_run_rear / total_time_rear) * 100).toFixed(2)) || 0;
+    const performance_rear = Number((item.rear_ok / (total_time_rear / target_ct)).toFixed(2)) * 100 || 0;
+    const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (yield_rear / 100) * 100).toFixed(2)) || 0;
+
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),
@@ -235,6 +245,14 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       opn_rear,
       front_cycle_t,
       rear_cycle_t,
+      downtime_seconds_front,
+      availability_front,
+      performance_front,
+      oee_front,
+      downtime_seconds_rear,
+      availability_rear,
+      performance_rear,
+      oee_rear,
     };
   });
 };
