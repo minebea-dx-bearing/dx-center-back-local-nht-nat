@@ -7,6 +7,7 @@ const dbms = new Sequelize({
     password: process.env.NHT_SERVER_PASSWORD,
     dialectOptions: {
         options: {
+            requestTimeout: 60000,
             instanceName: "",
         }
     }
