@@ -11,6 +11,7 @@ app.use(cors());
 // NAT Routes
 app.use("/nat/tn/tn-realtime", require("./api_nat/tn_tn_realtime").router);
 app.use("/nat/tn/tn-sum-alarm", require("./api_nat/tn_tn_sum_alarm"));
+app.use("/nat/tn/tn-history-daily", require("./api_nat/tn_history_daily"));
 app.use("/nat/tn/tn-summary", require("./api_nat/tn_tn_summary"));
 
 app.use("/nat/gd/2ndinbore-realtime", require("./api_nat/gd_2ndInBore_realtime").router);

@@ -7,19 +7,21 @@
  */
 
 const moment = require("moment");
+const currentIP = require("./check_current_ip");
 
 const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
-  const now = moment();
-  const remainder = now.minute() % 5;
-  const time_end = now.subtract(remainder, "minutes").second(0).millisecond(0);
-  const time_start = moment(time_end).subtract(5, "minutes");
+  if (currentIP.includes("10.128.16.110")) {
+    const now = moment();
+    const remainder = now.minute() % 5;
+    const time_end = now.subtract(remainder, "minutes").second(0).millisecond(0);
+    const time_start = moment(time_end).subtract(240, "minutes");
 
-  // const time_end = moment("2025-11-02 11:30");
-  // const time_start = moment(time_end).subtract(5, "days");
+    // const time_end = moment("2025-11-02 11:30");
+    // const time_start = moment(time_end).subtract(5, "days");
 
-  try {
-    const response_alarm = await dbms.query(
-      `
+    try {
+      const response_alarm = await dbms.query(
+        `
         DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm")}';
         DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm")}';
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);    -- เวลาที่ต้องการลบไป 2hr เพื่อดึง alarm ตัวก่อนหน้า --
@@ -226,12 +228,12 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
         FROM [filter_result]
         ORDER BY [mc_no], [occurred_start]
       `
-    );
+      );
 
-    const data_alarm = response_alarm[0].length > 0 ? response_alarm[0] : [];
+      const data_alarm = response_alarm[0].length > 0 ? response_alarm[0] : [];
 
-    const response_sum_alarm = await dbms.query(
-      `
+      const response_sum_alarm = await dbms.query(
+        `
         DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm")}';
         DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm")}';
 
@@ -247,22 +249,22 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
         WHERE
           [occurred_start] BETWEEN @start_date AND @end_date OR [active] IN (1, 2)
       `
-    );
-    const data_sum_alarm = response_sum_alarm[0].length > 0 ? response_sum_alarm[0] : [];
-    for (let i = 0; i < data_alarm.length; i++) {
-      // check ถ้า ซ้ำไม่ให้ insert
-      const findDataForNewInsert = data_sum_alarm.find(
-        (item) =>
-          item.mc_no === data_alarm[i].mc_no &&
-          item.status_alarm === data_alarm[i].alarm_base &&
-          moment(data_alarm[i].occurred_start).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") &&
-          moment(data_alarm[i].occurred_end).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") ||
-          moment(data_alarm[i].occurred_start).isSame(moment(item.occurred_end))
       );
-      if (!findDataForNewInsert) {
-        // console.log("Insert", data_alarm[i]);
-        await dbms.query(
-          `
+      const data_sum_alarm = response_sum_alarm[0].length > 0 ? response_sum_alarm[0] : [];
+      for (let i = 0; i < data_alarm.length; i++) {
+        // check ถ้า ซ้ำไม่ให้ insert
+        const findDataForNewInsert = data_sum_alarm.find(
+          (item) =>
+            (item.mc_no === data_alarm[i].mc_no &&
+              item.status_alarm === data_alarm[i].alarm_base &&
+              moment(data_alarm[i].occurred_start).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") &&
+              moment(data_alarm[i].occurred_end).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]")) ||
+            moment(data_alarm[i].occurred_start).isSame(moment(item.occurred_end))
+        );
+        if (!findDataForNewInsert) {
+          // console.log("Insert", data_alarm[i]);
+          await dbms.query(
+            `
               INSERT INTO ${DATABASE_SUM_ALARM}
               (
                 [registered]
@@ -281,25 +283,23 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
                 ,'${moment(data_alarm[i].occurred_start).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
                 ,'${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
                 ,${data_alarm[i].duration_seconds}
-                ,${
-                  moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS") === time_end.format("YYYY-MM-DD HH:mm:ss.SSS") ? 1 : 0
-                }
+                ,${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS") === time_end.format("YYYY-MM-DD HH:mm:ss.SSS") ? 1 : 0}
               )
           `
-        );
-      }
+          );
+        }
 
-      const findDataForUpdate = data_sum_alarm.find(
-        (item) =>
-          item.active === 1 &&
-          item.mc_no === data_alarm[i].mc_no &&
-          item.status_alarm === data_alarm[i].alarm_base &&
-          moment(item.occurred_end).isSame(moment(data_alarm[i].occurred_start), "second")
-      );
-      if (findDataForUpdate) {
-        // console.log("UPDATE", findDataForUpdate);
-        await dbms.query(
-          `
+        const findDataForUpdate = data_sum_alarm.find(
+          (item) =>
+            item.active === 1 &&
+            item.mc_no === data_alarm[i].mc_no &&
+            item.status_alarm === data_alarm[i].alarm_base &&
+            moment(item.occurred_end).isSame(moment(data_alarm[i].occurred_start), "second")
+        );
+        if (findDataForUpdate) {
+          // console.log("UPDATE", findDataForUpdate);
+          await dbms.query(
+            `
               UPDATE ${DATABASE_SUM_ALARM}
               SET
               [occurred_end] = '${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}',
@@ -308,20 +308,23 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
                 moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS") === time_end.format("YYYY-MM-DD HH:mm:ss.SSS") ? 1 : 2
               }
               WHERE [active] = 1 AND [mc_no] = '${data_alarm[i].mc_no}' AND [status_alarm] = '${
-            data_alarm[i].alarm_base
-          }' AND [occurred_end] = '${moment(data_alarm[i].occurred_start).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
+              data_alarm[i].alarm_base
+            }' AND [occurred_end] = '${moment(data_alarm[i].occurred_start).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
           `
-        );
+          );
+        }
       }
-    }
 
-    return {
-      success: true,
-      data_alarm,
-    };
-  } catch (error) {
-    console.error("Database Query Error in sum alarm: ", error);
-    return [];
+      return {
+        success: true,
+        data_alarm,
+      };
+    } catch (error) {
+      console.error("Database Query Error in sum alarm: ", error);
+      return [];
+    }
+  } else {
+    console.log(`Function "sum_alarm" not work because run out of server`);
   }
 };
 
