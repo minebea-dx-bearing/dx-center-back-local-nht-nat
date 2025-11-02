@@ -8,10 +8,10 @@ const schedule = require("node-schedule");
 const DATABASE_ALARM = "[nat_mc_mcshop_tn].[dbo].[DATA_ALARMLIS_TN]";
 const DATABASE_SUM_ALARM = "[nat_mc_mcshop_tn].[dbo].[DATA_SUM_ALARM_TN]";
 
-let job = schedule.scheduleJob("*/5 * * * *", async () => {
-  await sum_alarm(dbms, DATABASE_ALARM, DATABASE_SUM_ALARM);
-  console.log(`Running task update data : ${moment().format("YYYY-MM-DD HH:mm:ss")}`);
-});
+// let job = schedule.scheduleJob("*/5 * * * *", async () => {
+//   await sum_alarm(dbms, DATABASE_ALARM, DATABASE_SUM_ALARM);
+//   console.log(`Running task update data : ${moment().format("YYYY-MM-DD HH:mm:ss")}`);
+// });
 
 router.get("/", async (req, res) => {
   try {
