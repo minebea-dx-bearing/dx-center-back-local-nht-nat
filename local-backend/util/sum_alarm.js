@@ -9,16 +9,19 @@
 const moment = require("moment");
 
 const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
-  const time_end = moment("2025-11-02 07:25");
-  // const time_start = moment(time_end).subtract(10, "days");
-  // const time_end = moment();
+  const now = moment();
+  const remainder = now.minute() % 5;
+  const time_end = now.subtract(remainder, "minutes").second(0).millisecond(0);
   const time_start = moment(time_end).subtract(5, "minutes");
+
+  // const time_end = moment("2025-11-02 11:30");
+  // const time_start = moment(time_end).subtract(5, "days");
 
   try {
     const response_alarm = await dbms.query(
       `
-        DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm:ss")}';
-        DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm:ss")}';
+        DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm")}';
+        DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm")}';
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);    -- เวลาที่ต้องการลบไป 2hr เพื่อดึง alarm ตัวก่อนหน้า --
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);        -- เวลาที่ต้องการบวกไป 2hr เพื่อดึง alarm ตัวหลัง --
 
@@ -221,7 +224,6 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
             *,
             DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
         FROM [filter_result]
-        WHERE [mc_no] = 'TB07'
         ORDER BY [mc_no], [occurred_start]
       `
     );
@@ -230,8 +232,8 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
 
     const response_sum_alarm = await dbms.query(
       `
-        DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm:ss")}';
-        DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm:ss")}';
+        DECLARE @start_date DATETIME = '${time_start.format("YYYY-MM-DD HH:mm")}';
+        DECLARE @end_date DATETIME = '${time_end.format("YYYY-MM-DD HH:mm")}';
 
         SELECT
           [registered]
@@ -243,7 +245,7 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
             ,[active]
         FROM ${DATABASE_SUM_ALARM}
         WHERE
-          [occurred_start] BETWEEN @start_date AND @end_date OR [active] IN (1, 2) AND [mc_no] = 'TB07'
+          [occurred_start] BETWEEN @start_date AND @end_date OR [active] IN (1, 2)
       `
     );
     const data_sum_alarm = response_sum_alarm[0].length > 0 ? response_sum_alarm[0] : [];
@@ -251,47 +253,40 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
       // check ถ้า ซ้ำไม่ให้ insert
       const findDataForNewInsert = data_sum_alarm.find(
         (item) =>
-          (item.mc_no === data_alarm[i].mc_no &&
-            item.status_alarm === data_alarm[i].alarm_base &&
-            moment(item.occurred_start).isSame(moment(data_alarm[i].occurred_start), "second")) ||
-          moment(item.occurred_end).isSame(moment(data_alarm[i].occurred_start), "second")
+          item.mc_no === data_alarm[i].mc_no &&
+          item.status_alarm === data_alarm[i].alarm_base &&
+          moment(data_alarm[i].occurred_start).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") &&
+          moment(data_alarm[i].occurred_end).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") ||
+          moment(data_alarm[i].occurred_start).isSame(moment(item.occurred_end))
       );
       if (!findDataForNewInsert) {
-        // check ถ้าค่าที่ได้อยู่ในช่วงที่มีอยู่แล้ว ก็ไม่ให้ insert
-        const findEditData = data_sum_alarm.find(
-          (item) =>
-            item.mc_no === data_alarm[i].mc_no &&
-            item.status_alarm === data_alarm[i].alarm_base &&
-            moment(data_alarm[i].occurred_start).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]") &&
-            moment(data_alarm[i].occurred_end).isBetween(moment(item.occurred_start), moment(item.occurred_end), null, "[]")
+        // console.log("Insert", data_alarm[i]);
+        await dbms.query(
+          `
+              INSERT INTO ${DATABASE_SUM_ALARM}
+              (
+                [registered]
+                ,[mc_no]
+                ,[status_alarm]
+                ,[occurred_start]
+                ,[occurred_end]
+                ,[duration_seconds]
+                ,[active]
+              )
+              VALUES
+              (
+                '${moment().format("YYYY-MM-DD HH:mm:ss.SSS")}'
+                ,'${data_alarm[i].mc_no}'
+                ,'${data_alarm[i].alarm_base}'
+                ,'${moment(data_alarm[i].occurred_start).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
+                ,'${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
+                ,${data_alarm[i].duration_seconds}
+                ,${
+                  moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS") === time_end.format("YYYY-MM-DD HH:mm:ss.SSS") ? 1 : 0
+                }
+              )
+          `
         );
-        if (!findEditData) {
-          console.log("Insert", data_alarm[i])
-          await dbms.query(
-            `
-                INSERT INTO ${DATABASE_SUM_ALARM}
-                (
-                  [registered]
-                  ,[mc_no]
-                  ,[status_alarm]
-                  ,[occurred_start]
-                  ,[occurred_end]
-                  ,[duration_seconds]
-                  ,[active]
-                )
-                VALUES
-                (
-                  '${moment().format("YYYY-MM-DD HH:mm:ss.SSS")}'
-                  ,'${data_alarm[i].mc_no}'
-                  ,'${data_alarm[i].alarm_base}'
-                  ,'${moment(data_alarm[i].occurred_start).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
-                  ,'${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS")}'
-                  ,${data_alarm[i].duration_seconds}
-                  ,${moment(data_alarm[i].occurred_end).utc().format("YYYY-MM-DD HH:mm:ss.SSS") === time_end.format("YYYY-MM-DD HH:mm:ss.SSS") ? 1 : 0}
-                )
-            `
-          );
-        }
       }
 
       const findDataForUpdate = data_sum_alarm.find(
@@ -302,7 +297,7 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
           moment(item.occurred_end).isSame(moment(data_alarm[i].occurred_start), "second")
       );
       if (findDataForUpdate) {
-        console.log("UPDATE", findDataForUpdate)
+        // console.log("UPDATE", findDataForUpdate);
         await dbms.query(
           `
               UPDATE ${DATABASE_SUM_ALARM}
