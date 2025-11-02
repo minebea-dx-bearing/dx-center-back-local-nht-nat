@@ -14,7 +14,7 @@ const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
     const now = moment();
     const remainder = now.minute() % 5;
     const time_end = now.subtract(remainder, "minutes").second(0).millisecond(0);
-    const time_start = moment(time_end).subtract(300, "minutes");
+    const time_start = moment(time_end).subtract(10, "minutes");
 
     // const time_end = moment("2025-11-02 11:30");
     // const time_start = moment(time_end).subtract(5, "days");
