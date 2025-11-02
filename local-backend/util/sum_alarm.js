@@ -10,11 +10,11 @@ const moment = require("moment");
 const currentIP = require("./check_current_ip");
 
 const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
-  if (currentIP.includes("10.128.16.110")) {
+  if (currentIP.includes("172.20.0.2")) {
     const now = moment();
     const remainder = now.minute() % 5;
     const time_end = now.subtract(remainder, "minutes").second(0).millisecond(0);
-    const time_start = moment(time_end).subtract(5, "minutes");
+    const time_start = moment(time_end).subtract(300, "minutes");
 
     // const time_end = moment("2025-11-02 11:30");
     // const time_start = moment(time_end).subtract(5, "days");
