@@ -406,12 +406,16 @@ router.post("/data", async (req, res) => {
         } else {
           if (item_prod.target_ct === 0) {
             target_prod = 0;
+          } else {
+            target_prod = Number(
+              (
+                (diff_time_stamp / item_prod.target_ct) *
+                (item_prod.target_utl / 100) *
+                (item_prod.target_yield / 100) *
+                item_prod.ring_factor
+              ).toFixed(0)
+            );
           }
-          target_prod = Number(
-            ((diff_time_stamp / item_prod.target_ct) * (item_prod.target_utl / 100) * (item_prod.target_yield / 100) * item_prod.ring_factor).toFixed(
-              0
-            )
-          );
         }
 
         const utl = Number(((item_prod.total_prod / ((diff_time_stamp / item_prod.target_ct) * item_prod.ring_factor)) * 100).toFixed(2)) || 0;
