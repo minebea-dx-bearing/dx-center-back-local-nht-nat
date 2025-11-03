@@ -110,9 +110,9 @@ router.post("/data", async (req, res) => {
           ISNULL([master_target].[part_no], 0) AS [part_no],
             ISNULL([master_target].[target_ct], 0) AS [target_ct],
             ISNULL([master_target].[target_utl], 0) AS [target_utl],
-            ISNULL([master_target].[target_yield], 0) AS [target_yield],
+            ISNULL([master_target].[target_yield], 100) AS [target_yield],
             ISNULL([master_target].[target_special], 0) AS [target_special],
-          ISNULL([master_target].[ring_factor], 0) AS [ring_factor]
+          ISNULL([master_target].[ring_factor], 1) AS [ring_factor]
         FROM [sum_data]
         LEFT JOIN [master_target]
         ON [master_target].[mc_no] = [sum_data].[mc_no] AND [master_target].[rn] = 1
@@ -404,6 +404,9 @@ router.post("/data", async (req, res) => {
         if (item_prod.target_special > 0) {
           target_prod = Number(((item_prod.target_special / 86400) * diff_time_stamp).toFixed(0));
         } else {
+          if (item_prod.target_ct === 0) {
+            target_prod = 0;
+          }
           target_prod = Number(
             ((diff_time_stamp / item_prod.target_ct) * (item_prod.target_utl / 100) * (item_prod.target_yield / 100) * item_prod.ring_factor).toFixed(
               0
@@ -490,20 +493,48 @@ router.post("/data", async (req, res) => {
       }))
       .sort((a, b) => b.total_duration - a.total_duration);
 
-    chart_stacked_by_mc = data_prod.map((item_prod) => {
-      const stack_item = {
-        mc_no: item_prod.mc_no,
-      };
+    const legendData = new Set();
+    data_prod.forEach((item_prod) => {
+      item_prod.find_alarm.forEach((item_alarm) => {
+        if (item_alarm.type !== "running") {
+          legendData.add(item_alarm.status_alarm);
+        }
+      });
+    });
+    const legendArray = Array.from(legendData);
 
+    const xAxisData = data_prod.map((item) => item.mc_no);
+
+    const seriesDataMap = new Map();
+    legendArray.forEach((name) => {
+      seriesDataMap.set(name, new Array(data_prod.length).fill(0));
+    });
+
+    data_prod.forEach((item_prod, index) => {
       item_prod.find_alarm.forEach((item_alarm) => {
         if (item_alarm.type !== "running") {
           const status = item_alarm.status_alarm;
           const duration = item_alarm.sum_duration_seconds;
-          stack_item[status] = (stack_item[status] || 0) + duration;
+
+          const dataArray = seriesDataMap.get(status);
+          dataArray[index] += duration;
         }
       });
-      return stack_item;
     });
+
+    const series = legendArray.map((name) => ({
+      name: name,
+      type: "bar",
+      stack: "total",
+      emphasis: { focus: "series" },
+      data: seriesDataMap.get(name),
+    }));
+
+    chart_stacked_by_mc = {
+      xAxis: xAxisData,
+      legend: legendArray,
+      series: series,
+    };
 
     res.json({
       success: true,
