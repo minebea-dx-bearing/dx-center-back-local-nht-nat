@@ -11,7 +11,7 @@ app.use(cors());
 // NAT Routes
 app.use("/nat/tn/tn-realtime", require("./api_nat/tn_tn_realtime").router);
 app.use("/nat/tn/tn-sum-alarm", require("./api_nat/tn_tn_sum_alarm"));
-app.use("/nat/tn/tn-history-daily", require("./api_nat/tn_history_daily"));
+app.use("/nat/tn/tn-daily", require("./api_nat/tn_tn_daily"));
 app.use("/nat/tn/tn-summary", require("./api_nat/tn_tn_summary"));
 
 app.use("/nat/gd/2ndinbore-realtime", require("./api_nat/gd_2ndInBore_realtime").router);
@@ -24,12 +24,16 @@ app.use("/nat/gd/2gd-sum-alarm", require("./api_nat/gd_2gd_sum_alarm"));
 
 app.use("/nat/assy/mbr-realtime", require("./api_nat/assy_mbr_realtime").router);
 app.use("/nat/assy/mbr-sum-alarm", require("./api_nat/assy_mbr_sum_alarm"));
+app.use("/nat/assy/mbr-daily", require("./api_nat/assy_mbr_daily"));
 app.use("/nat/assy/arp-realtime", require("./api_nat/assy_arp_realtime").router);
+app.use("/nat/assy/arp-daily", require("./api_nat/assy_arp_daily"));
 app.use("/nat/assy/arp-sum-alarm", require("./api_nat/assy_arp_sum_alarm"));
 app.use("/nat/assy/gssm-realtime", require("./api_nat/assy_gssm_realtime").router);
 app.use("/nat/assy/gssm-sum-alarm", require("./api_nat/assy_gssm_sum_alarm"));
+app.use("/nat/assy/gssm-daily", require("./api_nat/assy_gssm_daily"));
 app.use("/nat/assy/fim-realtime", require("./api_nat/assy_fim_realtime").router);
 app.use("/nat/assy/fim-sum-alarm", require("./api_nat/assy_fim_sum_alarm"));
+app.use("/nat/assy/fim-daily", require("./api_nat/assy_fim_daily"));
 app.use("/nat/assy/ant-realtime", require("./api_nat/assy_ant_realtime").router);
 app.use("/nat/assy/ant-sum-alarm", require("./api_nat/assy_ant_sum_alarm"));
 app.use("/nat/assy/aod-realtime", require("./api_nat/assy_aod_realtime").router);
