@@ -10,6 +10,7 @@ const moment = require("moment");
 const currentIP = require("./check_current_ip");
 
 const sum_alarm = async (dbms, DATABASE_ALARM, DATABASE_SUM_ALARM) => {
+  // ให้ function นี้ทำงานเมื่ออยู่ใน Server เท่านั้น
   if (currentIP.includes("172.20.0.2")) {
     const now = moment();
     const remainder = now.minute() % 5;
