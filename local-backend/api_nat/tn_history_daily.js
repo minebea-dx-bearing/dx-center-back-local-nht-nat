@@ -62,6 +62,7 @@ router.post("/data", async (req, res) => {
                 ELSE CONVERT(date, [registered])
             END AS [working_date],
             UPPER([mc_no]) AS [mc_no],
+            [cycle_time] / 100 AS [cycle_time],
             [prod_pos4],
             LAG([prod_pos4]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_pos4],
             [prod_pos6],
@@ -87,6 +88,7 @@ router.post("/data", async (req, res) => {
             [working_date],
             [mc_no],
             MAX([registered]) AS latest_registered,
+            ROUND(AVG([cycle_time]), 2) AS [avg_ct],
             SUM(
             CASE 
               WHEN prev_prod_pos4 IS NULL THEN 0
@@ -135,7 +137,7 @@ router.post("/data", async (req, res) => {
             -- เรียก data ทั้งหมด ก่อนและหลัง 1hr --
             SELECT
                 [mc_no],
-            [occurred],
+                [occurred],
                 [alarm],
                 CASE
                     WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
