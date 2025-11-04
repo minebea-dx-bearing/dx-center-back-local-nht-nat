@@ -424,7 +424,7 @@ router.post("/data", async (req, res) => {
         const opn = Number(((running_time / total_time) * 100).toFixed(2)) || 0;
         const availability = Number(((running_time / (total_time - planstop_time)) * 100).toFixed(2)) || 0;
         const performance = Number(((item_prod.total_prod / ((running_time / item_prod.target_ct) * item_prod.ring_factor)) * 100).toFixed(2)) || 0;
-        const quality = Number(((item_prod.total_prod / (item_prod.total_prod + (item_prod.total_ng || 0))) * 100).toFixed(2)) || 0;
+        const quality = Number(((item_prod.total_prod / (item_prod.total_prod + (item_prod.total_ng || 0))) * 100).toFixed(2)) || 100;
         const oee = Number(((availability / 100) * (performance / 100) * (quality / 100) * 100).toFixed(2)) || 0;
 
         summary_data.target_prod += target_prod;
