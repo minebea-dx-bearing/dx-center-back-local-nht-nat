@@ -17,7 +17,7 @@ router.get("/", async (req, res) => {
   const dataGSSM = prepareGSSM(machineDataGSSM(), await currentGSSM());
   const dataFIM = prepareFIM(machineDataFIM(), await currentFIM());
   const dataANT = prepareANT(machineDataANT(), await currentANT());
-  const dataAOD = prepareANT(machineDataAOD(), await currentAOD());
+  const dataAOD = prepareAOD(machineDataAOD(), await currentAOD());
   const dataAVS = prepareAVS(machineDataAVS(), await currentAVS());
   const dataALU = prepareALU(machineDataALU(), await currentALU());
 
