@@ -15,7 +15,7 @@ router.get("/select", async (req, res) => {
 
           SELECT DISTINCT
               UPPER([mc_no]) AS [mc_no]
-          FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+          FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
           ORDER BY [mc_no]
       `
     );
@@ -58,29 +58,27 @@ router.post("/data", async (req, res) => {
             SELECT
                 [registered],
                 CASE 
-                    WHEN DATEPART(HOUR, [registered]) < 7 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
-                    ELSE CONVERT(date, [registered])
+                  WHEN DATEPART(HOUR, [registered]) < 7 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+                  ELSE CONVERT(date, [registered])
                 END AS [working_date],
                 UPPER([mc_no]) AS [mc_no],
                 [cycle_t] / 100 AS [cycle_time],
-                [daily_ok],
-                LAG([daily_ok]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_daily_ok],
-                [daily_ng],
-                LAG([daily_ng]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_daily_ng]
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+                [prod_cnt],
+                LAG([prod_cnt]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_cnt]
+            FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
             WHERE [registered] BETWEEN @start_date AND @end_date ${queryWhere1}
         ),
         [master_target] AS (
-          	SELECT
-              UPPER([mc_no]) AS [mc_no],
-              [part_no],
-              [target_ct],
-              [target_utl],
-              [target_yield],
-              [target_special],
-              [ring_factor],
-              ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+            SELECT
+                UPPER([mc_no]) AS [mc_no],
+                [part_no],
+                [target_ct],
+                [target_utl],
+                [target_yield],
+                [target_special],
+                [ring_factor],
+                ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+	          FROM [nat_mc_assy_alu].[dbo].[DATA_MASTER_ALU]
         ),
         [sum_data] AS (
             SELECT
@@ -90,25 +88,18 @@ router.post("/data", async (req, res) => {
                 ROUND(AVG([cycle_time]), 2) AS [avg_ct],
                 SUM(
                 CASE 
-                  WHEN [prev_daily_ok] IS NULL THEN 0
-                  WHEN [daily_ok] < [prev_daily_ok] THEN [daily_ok]
-                  ELSE [daily_ok] - [prev_daily_ok]
+                  WHEN [prev_prod_cnt] IS NULL THEN 0
+                  WHEN [prod_cnt] < [prev_prod_cnt] THEN [prod_cnt]
+                  ELSE [prod_cnt] - [prev_prod_cnt]
                 END
-                ) AS [total_daily_ok],
-                SUM(
-                CASE 
-                  WHEN [prev_daily_ng] IS NULL THEN 0
-                  WHEN [daily_ng] < [prev_daily_ng] THEN [daily_ng]
-                  ELSE [daily_ng] - [prev_daily_ng]
-                END
-                ) AS [total_daily_ng]
+                ) AS [total_prod_cnt]
             FROM cte
             GROUP BY [working_date], [mc_no]
         )
         SELECT
             [sum_data].*,
-            [sum_data].[total_daily_ok] + [sum_data].[total_daily_ng] AS [total_prod],
-            [sum_data].[total_daily_ng] AS [total_ng],
+            [sum_data].[total_prod_cnt] + 0 AS [total_prod],
+            [sum_data].[total_prod_cnt] AS [total_daily_ok],
             ISNULL([master_target].[part_no], 0) AS [part_no],
             ISNULL([master_target].[target_ct], 0) AS [target_ct],
             ISNULL([master_target].[target_utl], 0) AS [target_utl],
@@ -147,7 +138,7 @@ router.post("/data", async (req, res) => {
                     WHEN RIGHT([alarm], 1) = '_' THEN 'after'
                     ELSE 'before'
                 END AS [alarm_type]
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]
+            FROM [nat_mc_assy_alu].[dbo].[DATA_ALARMLIS_ALU]
             WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
         ),
         [with_pairing] AS (
@@ -172,7 +163,7 @@ router.post("/data", async (req, res) => {
                 [mc_no],
                 [registered],
                 CAST(broker AS FLOAT) AS [broker_f]
-            FROM [nat_mc_assy_mbr].[dbo].[MONITOR_IOT]
+            FROM [nat_mc_assy_alu].[dbo].[MONITOR_IOT]
             WHERE registered BETWEEN @start_date_p1 AND @end_date_p1
         ),
         [mark] AS (

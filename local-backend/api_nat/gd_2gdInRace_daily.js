@@ -3,7 +3,7 @@ const router = express.Router();
 const dbms = require("../instance/ms_instance_nat");
 const moment = require("moment");
 
-const time_start = "06:10";
+const time_start = "07:10";
 
 router.get("/select", async (req, res) => {
   try {
@@ -15,7 +15,8 @@ router.get("/select", async (req, res) => {
 
           SELECT DISTINCT
               UPPER([mc_no]) AS [mc_no]
-          FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+          FROM [nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]
+          WHERE [mc_no] LIKE 'IR%R'
           ORDER BY [mc_no]
       `
     );
@@ -37,10 +38,10 @@ router.post("/data", async (req, res) => {
   let queryWhere2;
   if (mcNoQuery === "ALL") {
     queryWhere1 = "";
-    queryWhere2 = "";
+    queryWhere2 = "WHERE [mc_no] LIKE 'IR%R'";
   } else {
     queryWhere1 = `AND [mc_no] = '${mcNoQuery}'`;
-    queryWhere2 = `WHERE [mc_no] = '${mcNoQuery}'`;
+    queryWhere2 = `WHERE [mc_no] LIKE 'IR%R' AND [mc_no] = '${mcNoQuery}'`;
   }
 
   try {
@@ -57,58 +58,48 @@ router.post("/data", async (req, res) => {
         WITH cte AS (
             SELECT
                 [registered],
-                CASE 
-                    WHEN DATEPART(HOUR, [registered]) < 7 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
-                    ELSE CONVERT(date, [registered])
-                END AS [working_date],
-                UPPER([mc_no]) AS [mc_no],
-                [cycle_t] / 100 AS [cycle_time],
-                [daily_ok],
-                LAG([daily_ok]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_daily_ok],
-                [daily_ng],
-                LAG([daily_ng]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_daily_ng]
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+            CASE 
+                WHEN DATEPART(HOUR, [registered]) < 8 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+                ELSE CONVERT(date, [registered])
+            END AS [working_date],
+            UPPER([mc_no]) AS [mc_no],
+            [eachct] / 100 AS [cycle_time],
+            [prod_total],
+            LAG([prod_total]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_total]
+            FROM [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]
             WHERE [registered] BETWEEN @start_date AND @end_date ${queryWhere1}
         ),
         [master_target] AS (
-          	SELECT
-              UPPER([mc_no]) AS [mc_no],
-              [part_no],
-              [target_ct],
-              [target_utl],
-              [target_yield],
-              [target_special],
-              [ring_factor],
-              ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+            SELECT
+            UPPER([mc_no]) AS [mc_no],
+            [part_no],
+            [target_ct],
+            [target_utl],
+            [target_yield],
+            [target_special],
+            [ring_factor],
+            ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+            FROM [nat_mc_mcshop_2gd].[dbo].[DATA_MASTER_2GD]
         ),
         [sum_data] AS (
             SELECT
-                [working_date],
-                [mc_no],
-                MAX([registered]) AS latest_registered,
-                ROUND(AVG([cycle_time]), 2) AS [avg_ct],
-                SUM(
-                CASE 
-                  WHEN [prev_daily_ok] IS NULL THEN 0
-                  WHEN [daily_ok] < [prev_daily_ok] THEN [daily_ok]
-                  ELSE [daily_ok] - [prev_daily_ok]
-                END
-                ) AS [total_daily_ok],
-                SUM(
-                CASE 
-                  WHEN [prev_daily_ng] IS NULL THEN 0
-                  WHEN [daily_ng] < [prev_daily_ng] THEN [daily_ng]
-                  ELSE [daily_ng] - [prev_daily_ng]
-                END
-                ) AS [total_daily_ng]
+            [working_date],
+            [mc_no],
+            MAX([registered]) AS latest_registered,
+            ROUND(AVG([cycle_time]), 2) AS [avg_ct],
+            SUM(
+            CASE 
+                WHEN prev_prod_total IS NULL THEN 0
+                WHEN [prod_total] < prev_prod_total THEN [prod_total]
+                ELSE [prod_total] - prev_prod_total
+            END
+            ) AS total_prod_total
             FROM cte
             GROUP BY [working_date], [mc_no]
         )
         SELECT
             [sum_data].*,
-            [sum_data].[total_daily_ok] + [sum_data].[total_daily_ng] AS [total_prod],
-            [sum_data].[total_daily_ng] AS [total_ng],
+            [sum_data].[total_prod_total] AS [total_prod],
             ISNULL([master_target].[part_no], 0) AS [part_no],
             ISNULL([master_target].[target_ct], 0) AS [target_ct],
             ISNULL([master_target].[target_utl], 0) AS [target_utl],
@@ -118,6 +109,7 @@ router.post("/data", async (req, res) => {
         FROM [sum_data]
         LEFT JOIN [master_target]
         ON [master_target].[mc_no] = [sum_data].[mc_no] AND [master_target].[rn] = 1
+        WHERE [sum_data].[mc_no] LIKE 'IR%R'
       `
     );
 
@@ -147,8 +139,8 @@ router.post("/data", async (req, res) => {
                     WHEN RIGHT([alarm], 1) = '_' THEN 'after'
                     ELSE 'before'
                 END AS [alarm_type]
-            FROM [nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
+            FROM [nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [mc_no] LIKE 'IR%R'
         ),
         [with_pairing] AS (
             -- จับคู่ alarm กับ alarm_ --
@@ -172,7 +164,7 @@ router.post("/data", async (req, res) => {
                 [mc_no],
                 [registered],
                 CAST(broker AS FLOAT) AS [broker_f]
-            FROM [nat_mc_assy_mbr].[dbo].[MONITOR_IOT]
+            FROM [nat_mc_mcshop_2gd].[dbo].[MONITOR_IOT]
             WHERE registered BETWEEN @start_date_p1 AND @end_date_p1
         ),
         [mark] AS (
@@ -206,16 +198,16 @@ router.post("/data", async (req, res) => {
             WHERE [is_zero] = 1
         ),
         [summary_connection_lose] AS (
-          SELECT
+            SELECT
             [mc_no],
             'connection lose' AS [status_alarm],
             MIN(registered) AS [occurred_start],
             MAX(CASE WHEN [end_flag] = 1 THEN ISNULL([next_registered], [registered]) END) AS [occurred_end]
-          FROM [grpz]
-          GROUP BY [mc_no], [grp]
+            FROM [grpz]
+            GROUP BY [mc_no], [grp]
         ),
         [conbine_connection_lose] AS (
-          SELECT * FROM [summary_connection_lose]
+            SELECT * FROM [summary_connection_lose]
             UNION ALL
             SELECT * FROM [paired_alarms]
         ),
@@ -302,10 +294,10 @@ router.post("/data", async (req, res) => {
             SELECT UPPER([mc_no]) AS [mc_no], UPPER([status_alarm]) AS [status_alarm], [new_occurred_start] AS [occurred_start], [occurred_end] FROM [edit_occurred]
             UNION ALL
             SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop]
-          UNION ALL
-          SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_end]
-          UNION ALL
-          SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_start]
+            UNION ALL
+            SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_end]
+            UNION ALL
+            SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_start]
         ),
         [edit_time_result] AS (
             -- ปัดเวลาให้เท่ากับเวลาที่ต้องการ --
@@ -329,15 +321,15 @@ router.post("/data", async (req, res) => {
                 [occurred_end] > [occurred_start]
         ),
         [sum_data] AS (
-          SELECT
+            SELECT
             *,
             DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-          FROM [filter_result]
+            FROM [filter_result]
         )
         SELECT
-          [mc_no]
-          ,[status_alarm]
-          ,SUM([duration_seconds]) AS [sum_duration_seconds]
+            [mc_no]
+            ,[status_alarm]
+            ,SUM([duration_seconds]) AS [sum_duration_seconds]
         FROM [sum_data]
         ${queryWhere2}
         GROUP BY [mc_no], [status_alarm]
@@ -424,7 +416,7 @@ router.post("/data", async (req, res) => {
         const opn = Number(((running_time / total_time) * 100).toFixed(2)) || 0;
         const availability = Number(((running_time / (total_time - planstop_time)) * 100).toFixed(2)) || 0;
         const performance = Number(((item_prod.total_prod / ((running_time / item_prod.target_ct) * item_prod.ring_factor)) * 100).toFixed(2)) || 0;
-        const quality = Number(((item_prod.total_daily_ok / item_prod.total_prod) * 100).toFixed(2)) || 0;
+        const quality = Number(((item_prod.total_prod / (item_prod.total_prod + (item_prod.total_ng || 0))) * 100).toFixed(2)) || 100;
         const oee = Number(((availability / 100) * (performance / 100) * (quality / 100) * 100).toFixed(2)) || 0;
 
         summary_data.target_prod += target_prod;

@@ -66,8 +66,7 @@ router.post("/data", async (req, res) => {
             [prod_pos4],
             LAG([prod_pos4]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_pos4],
             [prod_pos6],
-            LAG([prod_pos6]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_pos6],
-          [prod_drop_pos4]
+            LAG([prod_pos6]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_prod_pos6]
             FROM [nat_mc_mcshop_tn].[dbo].[DATA_PRODUCTION_TN]
             WHERE [registered] BETWEEN @start_date AND @end_date ${queryWhere1}
         ),

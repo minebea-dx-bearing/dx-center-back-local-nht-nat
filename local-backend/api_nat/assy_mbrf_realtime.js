@@ -11,7 +11,7 @@ const determineMachineStatus = require("../util/determineMachineStatus");
 let machineData = {};
 
 // --- Configurations ---
-const process = "AOD";
+const process = "MBR_F";
 const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
 const startTime = 6; // start time 06:00
@@ -159,7 +159,6 @@ const queryCurrentRunningTime = async () => {
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
@@ -172,9 +171,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     let target_ct = item.target_ct || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.daily_ok || 0;
-    const prod_ng = item.daily_ag || 0;
-    const cycle_t = item.cycle_t / 100 || 0;
+    const prod_ok = item.match || 0;
+    const prod_ng = item.a_ng + item.a_ng_pos + item.a_ng_neg + item.a_unm + item.b_ng_pos + item.b_ng_neg + item.b_unm || 0;
+    const cycle_t = item.cycle_time / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
@@ -191,7 +190,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
     const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
-    
+
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),
