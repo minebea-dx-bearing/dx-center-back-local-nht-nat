@@ -20,10 +20,13 @@ app.use("/nat/gd/2ndinrace-realtime", require("./api_nat/gd_2ndInRace_realtime")
 app.use("/nat/gd/2ndinrace-daily", require("./api_nat/gd_2gdInRace_daily"));
 app.use("/nat/gd/2ndinsuper-realtime", require("./api_nat/gd_2ndInSuper_realtime").router);
 app.use("/nat/gd/2ndinsuper-daily", require("./api_nat/gd_2gdInSuper_daily"));
-app.use("/nat/gd/2ndoutsuper-realtime", require("./api_nat/gd_2ndOutSuper_realtime").router);
 app.use("/nat/gd/2ndoutrace-realtime", require("./api_nat/gd_2ndOutRace_realtime").router);
+app.use("/nat/gd/2ndoutrace-daily", require("./api_nat/gd_2gdOutRace_daily"));
+app.use("/nat/gd/2ndoutsuper-realtime", require("./api_nat/gd_2ndOutSuper_realtime").router);
+app.use("/nat/gd/2ndoutsuper-daily", require("./api_nat/gd_2gdOutSuper_daily"));
 app.use("/nat/gd/1gd-sum-alarm", require("./api_nat/gd_1gd_sum_alarm"));
 app.use("/nat/gd/2gd-sum-alarm", require("./api_nat/gd_2gd_sum_alarm"));
+app.use("/nat/gd/2gdin-combine-realtime", require("./api_nat/gd_2ndIn_combine_realtime"));
 
 app.use("/nat/assy/mbr-realtime", require("./api_nat/assy_mbr_realtime").router);
 app.use("/nat/assy/mbrf-realtime", require("./api_nat/assy_mbrf_realtime").router);

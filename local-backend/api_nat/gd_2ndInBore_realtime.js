@@ -181,7 +181,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
     const diff_prod = prod_ok - target_actual;
-    const diff_ct = cycle_t - target_ct;
+    const diff_ct = Number((cycle_t - target_ct).toFixed(2));
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
