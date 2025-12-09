@@ -1,23 +1,27 @@
 const express = require("express");
+const { queryCurrentRunningTime: currentMBRF, getMachineData: machineDataMBRF, prepareRealtimeData: prepareMBRF } = require("./assy_mbrf_realtime");
 const { queryCurrentRunningTime: currentMBR, getMachineData: machineDataMBR, prepareRealtimeData: prepareMBR } = require("./assy_mbr_realtime");
 const { queryCurrentRunningTime: currentARP, getMachineData: machineDataARP, prepareRealtimeData: prepareARP } = require("./assy_arp_realtime");
 const { queryCurrentRunningTime: currentGSSM, getMachineData: machineDataGSSM, prepareRealtimeData: prepareGSSM } = require("./assy_gssm_realtime");
 const { queryCurrentRunningTime: currentFIM, getMachineData: machineDataFIM, prepareRealtimeData: prepareFIM } = require("./assy_fim_realtime");
 const { queryCurrentRunningTime: currentANT, getMachineData: machineDataANT, prepareRealtimeData: prepareANT } = require("./assy_ant_realtime");
+const { queryCurrentRunningTime: currentAOD, getMachineData: machineDataAOD, prepareRealtimeData: prepareAOD } = require("./assy_aod_realtime");
 const { queryCurrentRunningTime: currentAVS, getMachineData: machineDataAVS, prepareRealtimeData: prepareAVS } = require("./assy_avs_realtime");
 const { queryCurrentRunningTime: currentALU, getMachineData: machineDataALU, prepareRealtimeData: prepareALU } = require("./assy_alu_realtime");
 const router = express.Router();
 
 router.get("/", async (req, res) => {
+  const dataMBRF = prepareMBRF(machineDataMBRF(), await currentMBRF());
   const dataMBR = prepareMBR(machineDataMBR(), await currentMBR());
   const dataARP = prepareARP(machineDataARP(), await currentARP());
   const dataGSSM = prepareGSSM(machineDataGSSM(), await currentGSSM());
   const dataFIM = prepareFIM(machineDataFIM(), await currentFIM());
   const dataANT = prepareANT(machineDataANT(), await currentANT());
+  const dataAOD = prepareAOD(machineDataAOD(), await currentAOD());
   const dataAVS = prepareAVS(machineDataAVS(), await currentAVS());
   const dataALU = prepareALU(machineDataALU(), await currentALU());
 
-  const combinedData = [...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAVS, ...dataALU].map((item) => {
+  const combinedData = [...dataMBRF, ...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAOD, ...dataAVS, ...dataALU].map((item) => {
     const machineNumber = parseInt(item.mc_no.slice(-2));
     const lineMaster = machineNumber === 1 ? `${item.process}-FIRST` : `${item.process}-SECOND`;
     return {

@@ -178,9 +178,11 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
-    const downtime_seconds = total_time - sum_run;
-    const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
-    const performance = Number((prod_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
+    const downtime_seconds = total_time - sum_run - plan_shutdown;
+
+    const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
+    const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
 
     return {
@@ -202,6 +204,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       total_time,
       opn,
       downtime_seconds,
+      plan_shutdown,
       availability,
       performance,
       oee,

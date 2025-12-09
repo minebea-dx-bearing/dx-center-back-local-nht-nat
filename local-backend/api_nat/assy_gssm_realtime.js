@@ -101,7 +101,7 @@ const queryCurrentRunningTime = async () => {
                     ELSE 'before'
                 END AS [alarm_type]
             FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_'
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%'
         ),
         [with_pairing] AS (
             SELECT *,
@@ -120,30 +120,37 @@ const queryCurrentRunningTime = async () => {
                 [mc_no],
                 [alarm_base],
             CASE
-              WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
-              ELSE [occurred]
+                WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
+                ELSE [occurred]
             END AS [occurred_start],
             CASE
-              WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
-              ELSE [occurred_next]
+                WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
+                ELSE [occurred_next]
             END AS [occurred_end]
             FROM [with_pairing]
             WHERE [alarm_type] = 'before' AND [next_type] = 'after'
         ),
         [filter_time] AS (
-          SELECT
+            SELECT
             *,
             DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-          FROM [paired_alarms]
-          WHERE [occurred_end] > [occurred_start]
+            FROM [paired_alarms]
+            WHERE [occurred_end] > [occurred_start]
         )
 
         SELECT
-          [mc_no],
-          SUM([duration_seconds]) AS [sum_duration],
-          DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
+            [mc_no],
+            CASE
+              WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) 
+              ELSE  0 
+            END AS [sum_duration],
+            CASE
+              WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) 
+              ELSE  0 
+            END AS [sum_planshutdown_duration],
+            DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
-        GROUP BY [mc_no]
+        GROUP BY [mc_no], [alarm_base]
     `
   );
   return result[1] > 0 ? result[0] : [];
@@ -187,10 +194,13 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const yield_grease = Number(((item.grease_ok / (item.grease_ok + prod_ng_grease)) * 100 || 0).toFixed(2));
     const yield_shield = Number(((item.shield_ok / (item.shield_ok + prod_ng_shield)) * 100 || 0).toFixed(2));
 
-    const downtime_seconds = total_time - sum_run;
-    const availability = Number(((sum_run / total_time) * 100).toFixed(2)) || 0;
-    const performance_grease = Number((item.grease_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
-    const performance_shield = Number((item.shield_ok / (total_time / target_ct)).toFixed(2)) * 100 || 0;
+    const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
+    const downtime_seconds = total_time - sum_run - plan_shutdown;
+
+    const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
+    const performance_grease = Number((((item.grease_ok + prod_ng_grease) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+    const performance_shield = Number((((item.shield_ok + prod_ng_shield) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+
     const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (yield_grease / 100) * 100).toFixed(2)) || 0;
     const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (yield_shield / 100) * 100).toFixed(2)) || 0;
 
@@ -219,6 +229,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       prod_ng_grease,
       prod_ng_shield,
       downtime_seconds,
+      plan_shutdown,
       availability,
       performance_grease,
       performance_shield,

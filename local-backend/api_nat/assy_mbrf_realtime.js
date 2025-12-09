@@ -11,13 +11,13 @@ const determineMachineStatus = require("../util/determineMachineStatus");
 let machineData = {};
 
 // --- Configurations ---
-const process = "2GD";
-const MQTT_SERVER = "10.128.16.110";
+const process = "MBR_F";
+const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
-const startTime = 7; // start time 07:00
-const DATABASE_PROD = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
-const DATABASE_MASTER = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
+const startTime = 6; // start time 06:00
+const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
+const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
+const DATABASE_MASTER = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
@@ -159,7 +159,6 @@ const queryCurrentRunningTime = async () => {
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
@@ -172,9 +171,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     let target_ct = item.target_ct || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.prod_total || 0;
-    const prod_ng = 0;
-    const cycle_t = item.eachct / 100 || 0;
+    const prod_ok = item.match || 0;
+    const prod_ng = item.a_ng + item.a_ng_pos + item.a_ng_neg + item.a_unm + item.b_ng_pos + item.b_ng_neg + item.b_unm || 0;
+    const cycle_t = item.cycle_time / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
@@ -222,7 +221,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 router.get("/machines", async (req, res) => {
   try {
     const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("R"));
+    const dataArray = prepareRealtimeData(machineData, runningTime);
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_actual || 0;
