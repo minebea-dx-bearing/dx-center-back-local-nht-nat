@@ -4,23 +4,6 @@ const dbms = require("../instance/ms_instance_nat");
 // const moment = require("moment");
 const moment = require("moment-timezone");
 
-router.get("/master_machine_tn", async (req, res) => {
-  try {
-    let master = await dbms.query(`
-        SELECT DISTINCT(UPPER(mc_no)) AS mc_no
-        FROM [nhbtn_db_mes].[dbo].[DATA_PRODUCTION]
-        ORDER BY mc_no ASC
-        `);
-
-    res.json({ data: master[0], success: true, message: "ok" });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res
-      .status(500)
-      .json({ data: [], success: false, message: "Internal Server Error" });
-  }
-});
-
 // MASTER MACHINE NO. ASSY
 router.get("/master_machine_mbr", async (req, res) => {
   try {
@@ -662,8 +645,7 @@ function calculateShifts(data, date) {
       const seconds = (nowHour - 6) * 3600; // ตั้งแต่ 6:00 ถึงตอนนี้
 
       const target_prod = calcTargetProd(seconds, A_start);
-      const utl =
-        (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
+      const utl = (diff_total/ (seconds / A_end.target_ct)) * 100 * A_end.ring_factor
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -676,7 +658,6 @@ function calculateShifts(data, date) {
         ach: ach.toFixed(2),
         yield: yieldVal.toFixed(2),
       };
-      M = { ...All };
     }
   }
   // -------------------------------------------------
@@ -688,8 +669,7 @@ function calculateShifts(data, date) {
     if (Mrow) {
       const seconds = 12 * 3600; // 06:00 - 17:00
       const target_prod = calcTargetProd(seconds, Mrow);
-      const utl =
-        (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
+      const utl = ((Mrow.prod_total)/ (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor
       const ach = (Mrow.prod_total / target_prod) * 100;
       const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100;
 
@@ -711,10 +691,7 @@ function calculateShifts(data, date) {
       const diff_ng = N_end.prod_ng - N_start.prod_ng;
       const seconds = 12 * 3600; // 18:00 - 05:00 ≈ 11 hr
       const target_prod = calcTargetProd(seconds, N_start);
-      const utl =
-        (diff_total / (seconds / N_start.target_ct)) *
-        100 *
-        N_start.ring_factor;
+      const utl = (diff_total/ (seconds / N_start.target_ct)) * 100 * N_start.ring_factor
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -738,7 +715,7 @@ function calculateShifts(data, date) {
 
       const seconds = 24 * 3600; // 24 ชั่วโมงเต็ม
       const target_prod = calcTargetProd(seconds, M || N);
-      const utl = (diff_total / (seconds / M.target_ct)) * 100 * M.ring_factor;
+      const utl = (diff_total/ (seconds / M.target_ct)) * 100 * M.ring_factor
 
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
@@ -757,8 +734,6 @@ function calculateShifts(data, date) {
         ach: ach.toFixed(2),
         yield: yieldVal.toFixed(2),
       };
-    } else {
-      All = { ...M };
     }
   }
 
