@@ -26,9 +26,11 @@ app.use("/nat/assy/ant-realtime", require("./api_nat/assy_ant_realtime").router)
 app.use("/nat/assy/aod-realtime", require("./api_nat/assy_aod_realtime").router);
 app.use("/nat/assy/avs-realtime", require("./api_nat/assy_avs_realtime").router);
 app.use("/nat/assy/alu-realtime", require("./api_nat/assy_alu_realtime").router);
+app.use("/nat/assy/mbr-table", require("./api_nat/assy_table"));
 
 app.use("/nat/assy/combine-realtime", require("./api_nat/assy_combine_realtime"));
 app.use("/nat/assy/analisis-by-mc", require("./api_nat/assy_analysis_by_mc"));
+
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);

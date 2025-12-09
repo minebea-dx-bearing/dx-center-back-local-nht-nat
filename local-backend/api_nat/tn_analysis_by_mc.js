@@ -1,34 +1,20 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nat");
+const dbms = require("../instance/ms_instance_nhb");
 // const moment = require("moment");
 const moment = require("moment-timezone");
 
+// MASTER MACHINE NO. ASSY
 router.get("/master_machine_tn", async (req, res) => {
+  console.log("TNTNTNTNTNTN");
+  
   try {
     let master = await dbms.query(`
         SELECT DISTINCT(UPPER(mc_no)) AS mc_no
         FROM [nhbtn_db_mes].[dbo].[DATA_PRODUCTION]
         ORDER BY mc_no ASC
         `);
-
-    res.json({ data: master[0], success: true, message: "ok" });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res
-      .status(500)
-      .json({ data: [], success: false, message: "Internal Server Error" });
-  }
-});
-
-// MASTER MACHINE NO. ASSY
-router.get("/master_machine_mbr", async (req, res) => {
-  try {
-    let master = await dbms.query(`
-        SELECT DISTINCT(UPPER(mc_no)) AS mc_no
-        FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
-        ORDER BY mc_no ASC
-        `);
+console.log("mcmcmcmcmc tn: ", master);
 
     res.json({ data: master[0], success: true, message: "ok" });
   } catch (error) {
@@ -107,226 +93,94 @@ router.get("/status_mbr/:mc_no/:date", async (req, res) => {
       .format("YYYY-MM-DD");
 
     let data = await dbms.query(`
-DECLARE @start_date DATETIME = '${date} 07:00';
-DECLARE @TargetEndDate DATETIME = '${dateTomarrow} 07:00';
-DECLARE @end_date DATETIME = CASE
-WHEN @TargetEndDate > GETDATE()
-THEN GETDATE()
-ELSE @TargetEndDate
-END;
+      DECLARE @start_date DATETIME = '${date} 07:00';
+      DECLARE @end_date DATETIME = '${dateTomarrow} 07:00';
 
-WITH [base_alarm] AS (
-    -- เรียก data ทั้งหมด ก่อนและหลัง 1hr --
-    SELECT
-        [mc_no],
-        [process],
-        [occurred],
-        [alarm],
-        CASE
-            WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
-            ELSE [alarm]
-        END AS [alarm_base],
-        CASE
-            WHEN RIGHT([alarm], 1) = '_' THEN 'after'
-            ELSE 'before'
-        END AS [alarm_type]
-    FROM [nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]
-    WHERE [occurred] BETWEEN @start_date AND @end_date
-),
-[with_pairing] AS (
-    -- จับคู่ alarm กับ alarm_ --
-    SELECT *,
-        LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]) AS [occurred_next],
-        LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]) AS [next_type]
-    FROM [base_alarm]
-),
-[paired_alarms] AS (
-    -- filter เฉพาะตัวที่มี alarm , alarm_ และ check ตัว alarm ที่เกิดซ้อนอยู่ใน alarm อีกตัว --
-    SELECT
-        [mc_no],
-        [process],
-        [alarm_base],
-        [occurred] AS [occurred_start],
-        [occurred_next] AS [occurred_end]
-    FROM [with_pairing]
-    WHERE [alarm_type] = 'before' AND [next_type] = 'after'
-),
-[base_monitor_iot] AS (
-    SELECT
-        [mc_no],
-        [process],
-        [registered],
-        CAST(broker AS FLOAT) AS [broker_f]
-    FROM [nat_mc_mcshop_tn].[dbo].[MONITOR_IOT]
-    WHERE registered BETWEEN @start_date AND @end_date
-),
-[mark] AS (
-    SELECT
-        [mc_no],
-        [process],
-        [registered],
-        [broker_f],
-        CASE WHEN [broker_f] = 0 THEN 1 ELSE 0 END AS [is_zero],
-        LAG(CASE WHEN [broker_f] = 0 THEN 1 ELSE 0 END)
-            OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [prev_is_zero],
-        LEAD(CASE WHEN [broker_f] = 0 THEN 1 ELSE 0 END)
-            OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [next_is_zero],
-        LEAD([registered])
-            OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [next_registered]
-    FROM [base_monitor_iot]
-),
-[flagged] AS (
-    SELECT
-        *,
-        CASE WHEN [is_zero] = 1 AND ISNULL([prev_is_zero],0) = 0 THEN 1 ELSE 0 END AS [start_flag],
-        CASE WHEN [is_zero] = 1 AND ISNULL([next_is_zero],0) = 0 THEN 1 ELSE 0 END AS [end_flag]
-    FROM [mark]
-),
-[grpz] AS (
-    -- เก็บเฉพาะแถวที่ broker = 0 แล้วทำ running group id สำหรับช่วงต่อเนื่อง
-    SELECT
-        *,
-        SUM(CASE WHEN [start_flag] = 1 THEN 1 ELSE 0 END)
-            OVER (PARTITION BY [mc_no] ORDER BY [registered] ROWS UNBOUNDED PRECEDING) AS [grp]
-    FROM [flagged]
-    WHERE [is_zero] = 1
-),
-[summary_connection_lose] AS (
-    SELECT
-        [mc_no],
-        [process],
-        'connection lose' AS [alarm_base],
-        MIN(registered) AS [occurred_start],
-        MAX(CASE WHEN [end_flag] = 1 THEN ISNULL([next_registered], [registered]) END) AS [occurred_end]
-    FROM [grpz]
-    GROUP BY [mc_no], [process], [grp]
-),
-[conbine_connection_lose] AS (
-    SELECT * FROM [summary_connection_lose]
-    UNION ALL
-    SELECT * FROM [paired_alarms]
-),
-[with_max_prev] AS (
-    SELECT *,
-        MAX([occurred_end]) OVER (
-            PARTITION BY [mc_no]
-            ORDER BY [occurred_start]
-            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS [max_prev_end]
-    FROM [conbine_connection_lose]
-),
-[check_duplicate] AS (
-    SELECT
-        [mc_no],
-        [process],
-        [alarm_base],
-        [occurred_start],
-        [occurred_end],
-        CASE
-            WHEN [max_prev_end] IS NOT NULL AND [occurred_end] <= [max_prev_end] THEN 1
-            ELSE 0
-        END AS [duplicate]
-    FROM [with_max_prev]
-),
-[clamped_alarms] AS (
-    -- ตัดตัวที่เป็น alarm ซ้อนใน alarm อีกตัวออกและเพิ่มเวลาก่อนและหลังเพื่อคำนวณ --
-    SELECT
-        [mc_no],
-        [process],
-        [alarm_base],
-        [occurred_start],
-        [occurred_end],
-        LAG([alarm_base]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]) AS [previous_alarm],
-        LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]) AS [previous_occurred],
-        DATEDIFF(SECOND, LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]), [occurred_start]) AS [previous_gap_seconds],
-        LEAD([alarm_base]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_alarm],
-        LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_occurred],
-        DATEDIFF(SECOND, [occurred_end], LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start])) AS [next_gap_seconds]
-    FROM [check_duplicate]
-    WHERE [duplicate] = 0
-),
-[edit_occurred] AS (
-    -- filter เอาเฉพาะเวลาที่ต้องการ , ถ้า alarm = mc_run แล้วเวลาซ้อนกับ alarm ตัวอื่นจะตัดเวลา alarm ตัวนั้นออก , ถ้าเป็น alarm1 เหลื่อม alarm2 จะตัดเวลา alarm1 ออกตามที่เหลื่อม --
-    SELECT
-        *,
-        CASE
-            WHEN [previous_gap_seconds] < 0 AND [previous_alarm] = 'mc_run' THEN [previous_occurred]
-            WHEN [previous_gap_seconds] < 0 THEN [previous_occurred]
-            ELSE [occurred_start]
-        END AS [new_occurred_start]
-    FROM [clamped_alarms]
-),
-[insert_stop] AS (
-    -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
-    SELECT
-        [mc_no],
-        [process],
-        'STOP' AS [alarm_base],
-        [occurred_end] AS [occurred_start],
-        [next_occurred] AS [occurred_end]
-    FROM [edit_occurred]
-    WHERE [next_gap_seconds] > 0
-),
-[insert_stop_end] AS (
-    -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
-    SELECT
-        [mc_no],
-        [process],
-        'STOP' AS [alarm_base],
-        [occurred_end] AS [occurred_start],
-        @end_date AS [occurred_end]
-    FROM [edit_occurred]
-    WHERE [next_gap_seconds] IS NULL
-),
-[insert_stop_start] AS (
-    -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
-    SELECT
-        [mc_no],
-        [process],
-        'STOP' AS [alarm_base],
-        @start_date AS [occurred_start],
-        [new_occurred_start] AS [occurred_end]
-    FROM [edit_occurred]
-    WHERE [previous_gap_seconds] IS NULL
-),
-[combine_result] AS (
-    -- รวม alarm ทั้งหมดกับ STOP เข้าด้วยกัน --
-    SELECT UPPER([mc_no]) AS [mc_no], UPPER([process]) AS [process], UPPER([alarm_base]) AS [alarm_base], [new_occurred_start] AS [occurred_start], [occurred_end] FROM [edit_occurred]
-    UNION ALL
-    SELECT UPPER([mc_no]) AS [mc_no], UPPER([process]) AS [process], [alarm_base], [occurred_start], [occurred_end] FROM [insert_stop]
-    UNION ALL
-    SELECT UPPER([mc_no]) AS [mc_no], UPPER([process]) AS [process], [alarm_base], [occurred_start], [occurred_end] FROM [insert_stop_end]
-    UNION ALL
-    SELECT UPPER([mc_no]) AS [mc_no], UPPER([process]) AS [process], [alarm_base], [occurred_start], [occurred_end] FROM [insert_stop_start]
-),
-[edit_time_result] AS (
-    -- ปัดเวลาให้เท่ากับเวลาที่ต้องการ --
-    SELECT
-        [mc_no],
-        [process],
-        [alarm_base],
-        CASE 
-            WHEN [occurred_start] < @start_date THEN CAST(@start_date AS datetime)    -- ปัดเวลาหัวให้เท่ากับเวลาที่ต้องการ --
-            ELSE [occurred_start]
-        END AS [occurred_start],
-        CASE 
-            WHEN [occurred_end] > @end_date THEN CAST(@end_date AS datetime)    -- ปัดเวลาท้ายให้เท่ากับเวลาที่ต้องการ --
-            ELSE [occurred_end]
-        END AS [occurred_end]
-    FROM [combine_result]
-),
-[filter_result] AS (
-    -- หลังปัดเวลาเสร็จ filter เอาข้อมูลที่เวลาผิดทิ้ง --
-    SELECT * FROM [edit_time_result]
-    WHERE
-        [occurred_end] > [occurred_start]
-)
-SELECT
-    *,
-    DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-FROM [filter_result]
-WHERE [mc_no] = '${mc_no}'
-ORDER BY [mc_no], [occurred_start]
+      WITH [alarm_base] AS (
+          -- สร้างช่วงเวลา alarm จาก occurred → restored
+          SELECT
+              UPPER([mc_no]) AS [mc_no],
+              UPPER([topic_group]) AS [process],
+              UPPER([topic]) AS [alarm_base],
+              [occurred] AS [occurred_start],
+              [restored] AS [occurred_end]
+          FROM [nhbtn_db_mes].[dbo].[DATA_ALARMLIST]
+          WHERE [occurred] BETWEEN @start_date AND @end_date
+          AND mc_no = '${mc_no}'
+      ),
+
+      [mcstatus_base] AS (
+          -- 🔹 สร้างช่วงเวลาสถานะเครื่องจาก status log
+          SELECT
+              UPPER([mc_no]) AS [mc_no],
+              'MC' AS [process],
+              UPPER([status]) AS [alarm_base],
+              [registered] AS [occurred_start],
+              LEAD([registered]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) AS [occurred_end]
+          FROM [nhbtn_db_mes].[dbo].[DATA_MCSTATUS]
+          WHERE [registered] BETWEEN @start_date AND @end_date
+          AND mc_no = '${mc_no}'
+      ),
+
+      [combine_result] AS (
+          -- 🔸 รวม alarm และ mcstatus เข้าด้วยกัน
+          SELECT * FROM [alarm_base]
+          UNION ALL
+          SELECT * FROM [mcstatus_base]
+      ),
+
+      [fill_stop] AS (
+          -- 🔸 เติม STOP สำหรับช่องว่างระหว่าง alarm / run ต่าง ๆ
+          SELECT
+              [mc_no],
+              [process],
+              'STOP' AS [alarm_base],
+              [occurred_end] AS [occurred_start],
+              LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [occurred_end]
+          FROM [combine_result]
+      ),
+
+      [union_all_result] AS (
+          -- 🔹 รวมทั้งหมด: ALARM + STATUS + STOP
+          SELECT * FROM [combine_result]
+          UNION ALL
+          SELECT * FROM [fill_stop]
+      ),
+
+      [edit_time_result] AS (
+          -- 🔸 ปัดเวลาให้อยู่ในช่วง start-end ที่กำหนด
+          SELECT
+              [mc_no],
+              [process],
+              [alarm_base],
+              CASE 
+                  WHEN [occurred_start] < @start_date THEN @start_date
+                  ELSE [occurred_start]
+              END AS [occurred_start],
+              CASE 
+                  WHEN [occurred_end] > @end_date OR [occurred_end] IS NULL THEN @end_date
+                  ELSE [occurred_end]
+              END AS [occurred_end]
+          FROM [union_all_result]
+      ),
+
+      [filter_result] AS (
+          -- 🔹 ลบ record ที่เวลาผิดหรือว่าง
+          SELECT *
+          FROM [edit_time_result]
+          WHERE [occurred_end] > [occurred_start]
+      )
+
+      -- ✅ ผลลัพธ์สุดท้าย
+      SELECT
+          [mc_no],
+          [process],
+          [alarm_base],
+          [occurred_start],
+          [occurred_end],
+          DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
+      FROM [filter_result]
+      ORDER BY [mc_no], [occurred_start];
 `);
     const colorMap = {};
     const palette = [
@@ -662,8 +516,7 @@ function calculateShifts(data, date) {
       const seconds = (nowHour - 6) * 3600; // ตั้งแต่ 6:00 ถึงตอนนี้
 
       const target_prod = calcTargetProd(seconds, A_start);
-      const utl =
-        (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
+      const utl = (diff_total/ (seconds / A_end.target_ct)) * 100 * A_end.ring_factor
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -676,7 +529,6 @@ function calculateShifts(data, date) {
         ach: ach.toFixed(2),
         yield: yieldVal.toFixed(2),
       };
-      M = { ...All };
     }
   }
   // -------------------------------------------------
@@ -688,8 +540,7 @@ function calculateShifts(data, date) {
     if (Mrow) {
       const seconds = 12 * 3600; // 06:00 - 17:00
       const target_prod = calcTargetProd(seconds, Mrow);
-      const utl =
-        (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
+      const utl = ((Mrow.prod_total)/ (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor
       const ach = (Mrow.prod_total / target_prod) * 100;
       const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100;
 
@@ -711,10 +562,7 @@ function calculateShifts(data, date) {
       const diff_ng = N_end.prod_ng - N_start.prod_ng;
       const seconds = 12 * 3600; // 18:00 - 05:00 ≈ 11 hr
       const target_prod = calcTargetProd(seconds, N_start);
-      const utl =
-        (diff_total / (seconds / N_start.target_ct)) *
-        100 *
-        N_start.ring_factor;
+      const utl = (diff_total/ (seconds / N_start.target_ct)) * 100 * N_start.ring_factor
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -738,7 +586,7 @@ function calculateShifts(data, date) {
 
       const seconds = 24 * 3600; // 24 ชั่วโมงเต็ม
       const target_prod = calcTargetProd(seconds, M || N);
-      const utl = (diff_total / (seconds / M.target_ct)) * 100 * M.ring_factor;
+      const utl = (diff_total/ (seconds / M.target_ct)) * 100 * M.ring_factor
 
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
@@ -757,8 +605,6 @@ function calculateShifts(data, date) {
         ach: ach.toFixed(2),
         yield: yieldVal.toFixed(2),
       };
-    } else {
-      All = { ...M };
     }
   }
 
