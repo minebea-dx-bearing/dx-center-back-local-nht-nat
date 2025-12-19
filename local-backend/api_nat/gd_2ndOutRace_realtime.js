@@ -170,27 +170,30 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
         ? item.target_special
         : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     let target_ct = item.target_ct || 0;
+    let target_utl = item.target_utl || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.prod_total || 0;
-    const prod_ng = 0;
-    const cycle_t = item.eachct / 100 || 0;
+    const act_pd = item.prod_total || 0;
+    const ng_pd = 0;
+    const act_ct = item.eachct / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
-    const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
-    const diff_prod = prod_ok - target_actual;
-    const diff_ct = Number((cycle_t - target_ct).toFixed(2));
+    const diff_pd = act_pd - target_pd;
+    const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
-    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
+    const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
+
+    const curr_utl = Number(((( act_pd + ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
-    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
+    const performance = Number((((act_pd + ng_pd) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
       ...item,
@@ -199,14 +202,16 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       process: item.process.toUpperCase(),
       status_alarm,
       target,
-      target_actual,
-      diff_prod,
-      prod_ok,
-      prod_ng,
-      yield_rate,
-      target_ct,
+      target_pd,
+      act_pd,
+      diff_pd,
+      // ng_pd,
+      act_ct,
       diff_ct,
-      cycle_t,
+      // curr_yield,
+      target_ct,
+      target_utl,
+      curr_utl,
       sum_run,
       total_time,
       opn,
@@ -225,21 +230,21 @@ router.get("/machines", async (req, res) => {
     const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("OR") && item.mc_no.endsWith("R"));
     const summary = dataArray.reduce(
       (acc, item) => {
-        acc.total_target += item.target_actual || 0;
-        acc.total_ok += item.prod_ok || 0;
-        acc.total_cycle_t += item.cycle_t || 0;
-        acc.total_opn += item.opn || 0;
+        acc.total_target += item.target_pd || 0;
+        acc.total_ok += item.act_pd || 0;
+        acc.total_cycle_t += item.act_ct || 0;
+        acc.total_utl += item.curr_utl || 0;
         acc.count += 1;
         return acc;
       },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 }
+      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
     );
 
     const resultSummary = {
       sum_target: summary.total_target,
       sum_daily_ok: summary.total_ok,
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
+      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
     };
     res.json({ success: true, data: dataArray, resultSummary });
   } catch (error) {

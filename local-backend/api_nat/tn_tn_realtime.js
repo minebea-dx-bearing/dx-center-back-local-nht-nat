@@ -201,10 +201,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       act_pd,
       diff_pd,
       drop,
-      ng_pd,
+      // ng_pd,
       act_ct,
       diff_ct,
-      curr_yield,
+      // curr_yield,
       target_ct,
       target_utl,
       curr_utl,
@@ -224,6 +224,7 @@ router.get("/machines", async (req, res) => {
   try {
     const runningTime = await queryCurrentRunningTime();
     const dataArray = prepareRealtimeData(machineData, runningTime);
+    // console.log(dataArray)
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_pd || 0;
