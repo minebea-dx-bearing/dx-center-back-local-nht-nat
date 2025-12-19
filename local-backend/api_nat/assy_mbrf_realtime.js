@@ -199,7 +199,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       // part_no: item.part_no,
       mc_no: item.mc_no.replace("_f", "").toUpperCase(),
       // model: item.model || "NO DATA",
-      // process: item.process.toUpperCase(),
+      process: item.process.toUpperCase(),
       target,
       f_target_pd,
       f_diff_pd,
