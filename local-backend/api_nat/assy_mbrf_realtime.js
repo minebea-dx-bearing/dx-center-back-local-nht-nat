@@ -66,7 +66,6 @@ client.on("message", (topic, message) => {
 
     if (machineData.hasOwnProperty(mc_no)) {
       const mqttData = JSON.parse(message.toString());
-
       machineData[mc_no] = {
         ...machineData[mc_no],
         ...mqttData,

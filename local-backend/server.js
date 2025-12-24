@@ -13,17 +13,23 @@ app.use("/nat/tn/tn-realtime", require("./api_nat/tn_tn_realtime").router);
 app.use("/nat/tn/tn-sum-alarm", require("./api_nat/tn_tn_sum_alarm"));
 app.use("/nat/tn/tn-daily", require("./api_nat/tn_tn_daily"));
 app.use("/nat/tn/tn-summary", require("./api_nat/tn_tn_summary"));
+app.use("/nat/tn/tn-analysis-by-mc", require("./api_nat/tn_tn_analysis_by_mc"));
 
 app.use("/nat/gd/2ndinbore-realtime", require("./api_nat/gd_2ndInBore_realtime").router);
 app.use("/nat/gd/2ndinbore-daily", require("./api_nat/gd_2gdInBore_daily"));
+app.use("/nat/gd/2ndinbore-analysis-by-mc", require("./api_nat/gd_2ndInBore_analysis_by_mc"));
 app.use("/nat/gd/2ndinrace-realtime", require("./api_nat/gd_2ndInRace_realtime").router);
 app.use("/nat/gd/2ndinrace-daily", require("./api_nat/gd_2gdInRace_daily"));
+app.use("/nat/gd/2ndinrace-analysis-by-mc", require("./api_nat/gd_2ndInRace_analysis_by_mc"));
 app.use("/nat/gd/2ndinsuper-realtime", require("./api_nat/gd_2ndInSuper_realtime").router);
 app.use("/nat/gd/2ndinsuper-daily", require("./api_nat/gd_2gdInSuper_daily"));
+app.use("/nat/gd/2ndinsuper-analysis-by-mc", require("./api_nat/gd_2ndInSuper_analysis_by_mc"));
 app.use("/nat/gd/2ndoutrace-realtime", require("./api_nat/gd_2ndOutRace_realtime").router);
 app.use("/nat/gd/2ndoutrace-daily", require("./api_nat/gd_2gdOutRace_daily"));
+app.use("/nat/gd/2ndoutrace-analysis-by-mc", require("./api_nat/gd_2ndOutRace_analysis_by_mc"));
 app.use("/nat/gd/2ndoutsuper-realtime", require("./api_nat/gd_2ndOutSuper_realtime").router);
 app.use("/nat/gd/2ndoutsuper-daily", require("./api_nat/gd_2gdOutSuper_daily"));
+app.use("/nat/gd/2ndoutsuper-analysis-by-mc", require("./api_nat/gd_2ndOutSuper_analysis_by_mc"));
 app.use("/nat/gd/1gd-sum-alarm", require("./api_nat/gd_1gd_sum_alarm"));
 app.use("/nat/gd/2gd-sum-alarm", require("./api_nat/gd_2gd_sum_alarm"));
 app.use("/nat/gd/2gdin-combine-realtime", require("./api_nat/gd_2ndIn_combine_realtime"));
@@ -53,8 +59,11 @@ app.use("/nat/assy/alu-daily", require("./api_nat/assy_alu_daily"));
 app.use("/nat/assy/alu-sum-alarm", require("./api_nat/assy_alu_sum_alarm"));
 
 // app.use("/nat/assy/combine-realtime", require("./api_nat/assy_combine_realtime"));
-app.use("/nat/assy/analisis-by-mc", require("./api_nat/assy_analysis_by_mc"));
-
+app.use("/nat/assy/mbr-analysis-by-mc", require("./api_nat/assy_mbr_analysis_by_mc"));
+app.use("/nat/assy/arp-analysis-by-mc", require("./api_nat/assy_arp_analysis_by_mc"));
+app.use("/nat/assy/fim-analysis-by-mc", require("./api_nat/assy_fim_analysis_by_mc"));
+app.use("/nat/assy/avs-analysis-by-mc", require("./api_nat/assy_avs_analysis_by_mc"));
+app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_mc"));
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
