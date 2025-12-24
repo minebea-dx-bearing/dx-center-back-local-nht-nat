@@ -158,6 +158,7 @@ const queryCurrentRunningTime = async () => {
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
     let f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
@@ -195,10 +196,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     return {
       // ...item,
-      // part_no: item.part_no,
+      part_no: item.part_no,
       mc_no: item.mc_no.replace("_f", "").toUpperCase(),
-      // model: item.model || "NO DATA",
+      model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
+      f_status_alarm,
+      f_target_yield: item.target_yield || 0,
       target,
       f_target_pd,
       f_diff_pd,
@@ -206,10 +209,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       f_act_ct,
       f_target_ct,
       f_diff_ct,
-      // f_status_alarm,
-      // f_curr_yield,
-      // f_curr_utl,
-      // f_target_utl,
+      f_curr_yield,
+      f_curr_utl,
+      f_target_utl,
       // f_ng_pd,
       // sum_run,
       // total_time,

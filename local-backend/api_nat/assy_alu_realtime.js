@@ -208,7 +208,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       // ng_pd,
       act_ct,
       diff_ct,
-      // curr_yield,
+      curr_yield,
       target_ct,
       target_utl,
       curr_utl,

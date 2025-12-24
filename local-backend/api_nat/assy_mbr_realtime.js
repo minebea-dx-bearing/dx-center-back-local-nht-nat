@@ -202,7 +202,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
       s_status_alarm,
-      target_yield: item.target_yield || 0,
+      s_target_yield: item.target_yield || 0,
       target,
       s_target_pd,
       s_diff_pd,
