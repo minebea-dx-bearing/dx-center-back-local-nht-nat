@@ -20,7 +20,7 @@ const calcTargetProd = (timeSeconds, row) => {
   return (timeSeconds / row.target_ct) * (row.target_utl / 100) * (row.target_yield / 100) * row.ring_factor;
 };
 
-function calculateShifts(data, date) {
+const calculateShifts = (data, date) => {
   let M = null;
   let N = null;
   let All = null;
@@ -32,7 +32,7 @@ function calculateShifts(data, date) {
   // ถ้าวันที่ = วันนี้  → คำนวณ All แบบ real-time
   // -------------------------------------------------
   if (date === todayStr) {
-    const A_start = data.find((r) => r.TIME.startsWith("06:"));
+    const A_start = data.find((r) => r.TIME.startsWith("08:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
     const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
@@ -40,7 +40,7 @@ function calculateShifts(data, date) {
     if (A_start && A_end) {
       const diff_total = A_end.prod_total;
       const diff_ok = A_end.prod_ok;
-      const seconds = (nowHour - 6) * 3600; // ตั้งแต่ 6:00 ถึงตอนนี้
+      const seconds = (nowHour - 6) * 3600;
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl = (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
@@ -64,9 +64,9 @@ function calculateShifts(data, date) {
   // -------------------------------------------------
   else {
     // ----------------- M -----------------
-    const Mrow = data.find((r) => r.TIME.startsWith("17:"));
+    const Mrow = data.find((r) => r.TIME.startsWith("19:"));
     if (Mrow) {
-      const seconds = 12 * 3600; // 06:00 - 17:00
+      const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
       const utl = (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
       const ach = (Mrow.prod_total / target_prod) * 100;
@@ -82,13 +82,13 @@ function calculateShifts(data, date) {
     }
 
     // ----------------- N -----------------
-    const N_start = data.find((r) => r.TIME.startsWith("18:"));
-    const N_end = data.find((r) => r.TIME.startsWith("05:"));
+    const N_start = data.find((r) => r.TIME.startsWith("19:"));
+    const N_end = data.find((r) => r.TIME.startsWith("07:"));
     if (N_start && N_end) {
       const diff_total = N_end.prod_total - N_start.prod_total;
       const diff_ok = N_end.prod_ok - N_start.prod_ok;
       const diff_ng = N_end.prod_ng - N_start.prod_ng;
-      const seconds = 12 * 3600; // 18:00 - 05:00 ≈ 11 hr
+      const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, N_start);
       const utl = (diff_total / (seconds / N_start.target_ct)) * 100 * N_start.ring_factor;
       const ach = (diff_total / target_prod) * 100;
@@ -190,7 +190,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
           WHERE mc_no = '${mc_no}'
-          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 8, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
           ORDER BY registered ASC
       `
     );
@@ -725,9 +725,6 @@ router.get("/status/:mc_no/:date", async (req, res) => {
   }
 });
 
-// --------------------------------------------
-// ตัวอย่างการใช้งานใน Node API
-// --------------------------------------------
 router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
   const { mc_no, date } = req.params;
   const data = await dbms.query(
@@ -751,7 +748,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
           FROM ${DATABASE_PROD} p
           LEFT JOIN ${DATABASE_MASTER} m ON p.mc_no = m.mc_no
       WHERE p.mc_no = '${mc_no}'
-      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 6, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
+      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
       ORDER BY registered ASC
     `
   );

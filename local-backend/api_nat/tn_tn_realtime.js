@@ -236,7 +236,6 @@ router.get("/machines", async (req, res) => {
       },
       { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
     );
-    // console.log(summary)
 
     const resultSummary = {
       sum_target: summary.total_target,
@@ -244,7 +243,7 @@ router.get("/machines", async (req, res) => {
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
       avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
     };
-    // console.log(resultSummary)
+
     res.json({ success: true, data: dataArray, resultSummary });
   } catch (error) {
     console.error("API Error in /machines: ", error);
