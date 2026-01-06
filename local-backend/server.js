@@ -65,6 +65,7 @@ app.use("/nat/assy/fim-analysis-by-mc", require("./api_nat/assy_fim_analysis_by_
 app.use("/nat/assy/avs-analysis-by-mc", require("./api_nat/assy_avs_analysis_by_mc"));
 app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_mc"));
 
+app.use("/nat/assy/report", require("./api_nat/assy_report"));
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });

@@ -15,9 +15,9 @@ const process = "ANT";
 const MQTT_SERVER = "10.128.16.111";
 const PORT = "1883";
 const startTime = 6; // start time 06:00
-const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
-const DATABASE_MASTER = `[nat_mc_assy_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
+const DATABASE_PROD = `[nat_mc_assy_${process.toLowerCase()}_new].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
+const DATABASE_ALARM = `[nat_mc_assy_${process.toLowerCase()}_new].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
+const DATABASE_MASTER = `[nat_mc_assy_${process.toLowerCase()}_new].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
@@ -185,12 +185,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     let target_ct = item.target_ct || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.front_ok + item.rear_ok || 0;
-    const prod_ng = item.front_ag + item.front_ng + item.front_mixball + item.rear_ag + item.rear_ng + item.rear_mixball || 0;
-    const cycle_t = (item.front_cycle_t + item.rear_cycle_t) / 2 / 100 || 0;
+    const prod_ok = item.ok_front + item.ok_rear || 0;
+    const prod_ng = item.ag_front + item.ng_front + item.mixball_front + item.ag_rear + item.ng_rear + item.mixball_rear || 0;
+    const cycle_t = (item.cycle_time_front + item.cycle_time_rear) / 2 / 100 || 0;
 
-    const front_cycle_t = item.front_cycle_t / 100 || 0;
-    const rear_cycle_t = item.rear_cycle_t / 100 || 0;
+    const cycle_time_front = item.cycle_time_front / 100 || 0;
+    const cycle_time_rear = item.cycle_time_rear / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
@@ -201,30 +201,30 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
-    const diff_prod_front = item.front_ok - target_actual;
-    const diff_prod_rear = item.rear_ok - target_actual;
+    const diff_prod_front = item.ok_front - target_actual;
+    const diff_prod_rear = item.ok_rear - target_actual;
 
-    const diff_ct_front = Number((front_cycle_t - target_ct).toFixed(2));
-    const diff_ct_rear = Number((rear_cycle_t - target_ct).toFixed(2));
+    const diff_ct_front = Number((cycle_time_front - target_ct).toFixed(2));
+    const diff_ct_rear = Number((cycle_time_rear - target_ct).toFixed(2));
 
-    const prod_ng_front = item.front_ag + item.front_ng + item.front_mixball;
-    const prod_ng_rear = item.rear_ag + item.rear_ng + item.rear_mixball;
+    const prod_ng_front = item.ag_front + item.ng_front + item.mixball_front;
+    const prod_ng_rear = item.ag_rear + item.ng_rear + item.mixball_rear;
 
-    const yield_front = Number(((item.front_ok / (item.front_ok + item.front_ag + item.front_ng + item.front_mixball)) * 100 || 0).toFixed(2));
-    const yield_rear = Number(((item.rear_ok / (item.rear_ok + item.rear_ag + item.rear_ng + item.rear_mixball)) * 100 || 0).toFixed(2));
+    const yield_front = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
+    const yield_rear = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
 
     const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
 
     const availability_front = Number(((sum_run_front / (total_time_front - plan_shutdown_front)) * 100).toFixed(2)) || 0;
-    const performance_front = Number((((item.front_ok + item.front_ag) / ((total_time_front - plan_shutdown_front) / target_ct)) * 100).toFixed(2)) || 0;
+    const performance_front = Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / target_ct)) * 100).toFixed(2)) || 0;
     const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (yield_front / 100) * 100).toFixed(2)) || 0;
 
     const plan_shutdown_rear = runInfoRear.sum_planshutdown_duration || 0;
     const downtime_seconds_rear = total_time_rear - sum_run_rear - plan_shutdown_rear;
 
     const availability_rear = Number(((sum_run_rear / (total_time_rear - plan_shutdown_rear)) * 100).toFixed(2)) || 0;
-    const performance_rear = Number((((item.rear_ok + item.rear_ag) / ((total_time_rear - plan_shutdown_rear) / target_ct)) * 100).toFixed(2)) || 0;
+    const performance_rear = Number((((item.ok_rear + item.ag_rear) / ((total_time_rear - plan_shutdown_rear) / target_ct)) * 100).toFixed(2)) || 0;
     const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (yield_rear / 100) * 100).toFixed(2)) || 0;
 
     return {
@@ -260,8 +260,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       sum_run_rear,
       total_time_rear,
       opn_rear,
-      front_cycle_t,
-      rear_cycle_t,
+      cycle_time_front,
+      cycle_time_rear,
       downtime_seconds_front,
       plan_shutdown_front,
       availability_front,
