@@ -14,7 +14,7 @@ let machineData = {};
 const process = "TN";
 const MQTT_SERVER = "10.128.16.110";
 const PORT = "1883";
-const startTime = 7; // start time 07:00
+const startTime = 5; // start time 05:00
 const DATABASE_PROD = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
@@ -83,7 +83,7 @@ client.on("message", (topic, message) => {
 const queryCurrentRunningTime = async () => {
   const result = await dbms.query(
     `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
+        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:30:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
@@ -173,7 +173,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const act_ct = item.cycle_time / 100 || 0;
 
     const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
+    const start_time = moment().startOf("day").hour(startTime).add(30, "minutes");
     const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
     const diff_pd = act_pd - target_pd;
