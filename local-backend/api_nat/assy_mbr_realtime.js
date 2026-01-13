@@ -170,6 +170,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
         ? item.target_special
         : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     let s_target_ct = item.target_ct || 0;
+    let s_target_yield = item.target_yield || 0;
     let s_target_utl = item.target_utl || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
@@ -202,7 +203,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
       s_status_alarm,
-      s_target_yield: item.target_yield || 0,
+      s_target_yield,
       target,
       s_target_pd,
       s_diff_pd,

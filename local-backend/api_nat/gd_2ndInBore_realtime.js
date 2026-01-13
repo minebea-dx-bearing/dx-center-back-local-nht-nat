@@ -200,6 +200,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
+      subProcess: item.process.toUpperCase()+"-IB",
       status_alarm,
       target,
       target_pd,
