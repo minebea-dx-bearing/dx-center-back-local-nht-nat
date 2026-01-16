@@ -23,7 +23,7 @@ router.get("/", async (req, res) => {
 
   const combinedData = [...dataMBRF, ...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAOD, ...dataAVS, ...dataALU].map((item) => {
     const machineNumber = parseInt(item.mc_no.slice(-2));
-    const lineMaster = machineNumber === 1 ? `${item.process}-FIRST` : `${item.process}-SECOND`;
+    const lineMaster = machineNumber === 1 || machineNumber === 3? `${item.process}-FIRST` : `${item.process}-SECOND`;
     return {
       ...item,
       lineMaster,
