@@ -73,6 +73,7 @@ app.use("/nht/assy/mbrf-realtime", require("./api_nht/assy_mbrf_realtime").route
 app.use("/nht/assy/fim-realtime", require("./api_nht/assy_fim_realtime").router);
 app.use("/nht/assy/mbr-analysis-by-mc", require("./api_nht/assy_mbr_analysis_by_mc"));
 app.use("/nht/assy/fim-analysis-by-mc", require("./api_nht/assy_fim_analysis_by_mc"));
+app.use("/nht/assy/getDataPart", require("./api_nht/getDataPart"));
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);

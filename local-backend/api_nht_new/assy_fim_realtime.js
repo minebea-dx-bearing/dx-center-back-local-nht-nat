@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nht");
+const dbms = require("../instance/ms_instance_nat");
 const mqtt = require("mqtt");
 const moment = require("moment");
 
@@ -11,12 +11,12 @@ const determineMachineStatus = require("../util/determineMachineStatus");
 let machineData = {};
 
 // --- Configurations ---
-const process = "ASSYF"; // MBR FRONT
+const process = "FIM";
 const MQTT_SERVER = "10.128.16.201";
 const PORT = "1883";
 const startTime = 6; // start time 06:00
 const DATABASE_PROD = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_ALARMLIST_${process.toUpperCase()}]`;
+const DATABASE_ALARM = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
 const DATABASE_MASTER = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
@@ -65,15 +65,7 @@ client.on("message", (topic, message) => {
     const mc_no = topic.split("/").pop();
 
     if (machineData.hasOwnProperty(mc_no)) {
-      // 1. แปลง message เป็น String
-      let rawData = message.toString();
-
-      // 2. ดักและล้าง Control Characters (อักขระตัวปัญหาที่ทำให้ JSON พัง)
-      // ช่วงอักขระ \x00-\x1F คืออักขระควบคุมที่มักทำให้เกิด SyntaxError ใน JSON
-      const cleanData = rawData.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
-
-      // 3. ลอง Parse ข้อมูลที่ Clean แล้ว
-      const mqttData = JSON.parse(cleanData);
+      const mqttData = JSON.parse(message.toString());
 
       machineData[mc_no] = {
         ...machineData[mc_no],
@@ -83,10 +75,7 @@ client.on("message", (topic, message) => {
       };
     }
   } catch (error) {
-    // ถ้ายังพังอยู่ ให้ Print message ออกมาดูว่าตัวที่ 257 คืออะไร
-    console.error("MQTT Message Error at MC:", topic.split("/").pop());
-    console.error("Error Detail:", error.message);
-    console.error("Raw Message (First 300 chars):", message.toString().substring(0, 300));
+    console.error("MQTT Message Error: ", error);
   }
 });
 
@@ -169,8 +158,8 @@ const queryCurrentRunningTime = async () => {
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-    
+    let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
@@ -180,59 +169,56 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       item.target_special > 0
         ? item.target_special
         : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
-    let f_target_ct = item.target_ct || 0;
-    let f_target_utl = item.target_utl || 0;
+    let target_ct = item.target_ct || 0;
+    let target_utl = item.target_utl || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const f_act_pd = item.match || 0;
-    const f_ng_pd = item.a_ng + item.a_ng_p + item.a_ng_n + item.a_unm + item.b_ng_p + item.b_ng_n + item.b_unm || 0;
-    const f_act_ct = (item.cycle_t || 0)/ 100 || 0;
+    const act_pd = item.ok || 0;
+    const ng_pd = item.ir_ng + item.ap_ng + item.or_ng + item.width_ng + item.chamfer_ng + item.mix_ng + item.shield_curl_ng + item.rotation_ng || 0;
+    const act_ct = item.cycletime / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
-    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
-    const f_diff_pd = f_act_pd - f_target_pd;
-    const f_diff_ct = Number((f_act_ct - f_target_ct).toFixed(2));
+    const diff_pd = act_pd - target_pd;
+    const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
-    const f_curr_yield = Number(((f_act_pd / (f_act_pd + f_ng_pd)) * 100 || 0).toFixed(2));
+    const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const f_curr_utl = Number(((( f_act_pd + f_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / f_target_ct)) * 100).toFixed(2)) || 0;
+    const curr_utl = Number((((act_pd + ng_pd) / ((now.diff(start_time, "second") * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
-    const f_downtime_seconds = total_time - sum_run - plan_shutdown;
+    const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((f_act_pd + f_ng_pd) / ((total_time - plan_shutdown) / f_target_ct)) * 100).toFixed(2)) || 0;
-    const f_oee = Number(((performance / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const performance = Number((((act_pd + ng_pd) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
-      // ...item,
-      part_no: item.part_no === "" ? item.model : item.part_no,
-      mc_no: item.mc_no.replace("_f", "").toUpperCase(),
+      ...item,
+      mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
-      process: "MBR_F",// item.process.toUpperCase(),
-      f_status_alarm,
-      f_target_yield: item.target_yield || 0,
+      process: item.process.toUpperCase(),
+      status_alarm,
       target,
-      f_target_pd,
-      f_diff_pd,
-      f_act_pd,
-      f_act_ct,
-      f_target_ct,
-      f_diff_ct,
-      f_curr_yield,
-      f_curr_utl,
-      f_target_utl,
-      // f_ng_pd,
-      // sum_run,
-      // total_time,
-      // opn,
-      // plan_shutdown,
-      // availability,
-      // performance,
-      f_downtime_seconds,
-      f_oee,
+      target_pd,
+      act_pd,
+      diff_pd,
+      act_ct,
+      diff_ct,
+      curr_yield,
+      target_ct,
+      target_utl,
+      curr_utl,
+      sum_run,
+      total_time,
+      opn,
+      downtime_seconds,
+      plan_shutdown,
+      availability,
+      performance,
+      oee,
     };
   });
 };
@@ -241,8 +227,25 @@ router.get("/machines", async (req, res) => {
   try {
     const runningTime = await queryCurrentRunningTime();
     const dataArray = prepareRealtimeData(machineData, runningTime);
-    // console.log(dataArray)
-    res.json({ success: true, data: dataArray });
+    const summary = dataArray.reduce(
+      (acc, item) => {
+        acc.total_target += item.target_pd || 0;
+        acc.total_ok += item.act_pd || 0;
+        acc.total_cycle_t += item.act_ct || 0;
+        acc.total_utl += item.curr_utl || 0;
+        acc.count += 1;
+        return acc;
+      },
+      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
+    );
+
+    const resultSummary = {
+      sum_target: summary.total_target,
+      sum_daily_ok: summary.total_ok,
+      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
+      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
+    };
+    res.json({ success: true, data: dataArray, resultSummary });
   } catch (error) {
     console.error("API Error in /machines: ", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });

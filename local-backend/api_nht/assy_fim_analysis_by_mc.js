@@ -176,7 +176,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       `
           SELECT [registered],
               convert(varchar, [registered], 8) AS TIME ,
-              [model] ,
+              'no model' AS [model] ,
               format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
@@ -731,7 +731,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
       SELECT 
         p.[registered],
         CONVERT(varchar, p.[registered], 8) AS TIME,
-        [model],
+        [part_no] AS [model],
         ${COLUMN_TOTAL} AS prod_total,
         ${COLUMN_OK} AS prod_ok,
         ${COLUMN_NG} AS prod_ng,
