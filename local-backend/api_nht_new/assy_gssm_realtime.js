@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nht");
+const dbms = require("../instance/ms_instance_nat");
 const mqtt = require("mqtt");
 const moment = require("moment");
 
@@ -11,12 +11,12 @@ const determineMachineStatus = require("../util/determineMachineStatus");
 let machineData = {};
 
 // --- Configurations ---
-const process = "FIM";
+const process = "GSSM";
 const MQTT_SERVER = "10.128.16.201";
 const PORT = "1883";
 const startTime = 6; // start time 06:00
 const DATABASE_PROD = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
+const DATABASE_ALARM = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_ALARMLIST_${process.toUpperCase()}]`;
 const DATABASE_MASTER = `[data_machine_${process.toLowerCase()}].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
@@ -141,13 +141,13 @@ const queryCurrentRunningTime = async () => {
         SELECT
             [mc_no],
             CASE
-            WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) 
-            ELSE  0 
-          END AS [sum_duration],
-          CASE
-            WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) 
-            ELSE  0 
-          END AS [sum_planshutdown_duration],
+              WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) 
+              ELSE  0 
+            END AS [sum_duration],
+            CASE
+              WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) 
+              ELSE  0 
+            END AS [sum_planshutdown_duration],
             DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
         GROUP BY [mc_no], [alarm_base]
@@ -157,8 +157,6 @@ const queryCurrentRunningTime = async () => {
 };
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
-  // console.log("FIM FIM currentMachineData",currentMachineData);
-  
   return Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
@@ -175,7 +173,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.ok || 0;
-    const prod_ng = item.ir_ng + item.ap_ng + item.or_ng + item.width_ng + item.chamfer_ng + item.mix_ng + item.shield_curl_ng + item.rotation_ng || 0;
+    const prod_ng = item.ng_ro1 + item.ng_ro2_grs + item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap + item.ng_grs || 0;
     const cycle_t = item.cycletime / 100 || 0;
 
     const now = moment(item.updated_at);
@@ -187,12 +185,24 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
+    const diff_prod_grease = item.grease_ok - target_actual;
+    const diff_prod_shield = item.shield_ok - target_actual;
+
+    const prod_ng_grease = item.ro1_ng + item.ro2_ng + item.grease_ng;
+    const prod_ng_shield = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng;
+
+    const yield_grease = Number(((item.grease_ok / (item.grease_ok + prod_ng_grease)) * 100 || 0).toFixed(2));
+    const yield_shield = Number(((item.shield_ok / (item.shield_ok + prod_ng_shield)) * 100 || 0).toFixed(2));
+
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
-    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
+    const performance_grease = Number((((item.grease_ok + prod_ng_grease) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+    const performance_shield = Number((((item.shield_ok + prod_ng_shield) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+
+    const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (yield_grease / 100) * 100).toFixed(2)) || 0;
+    const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (yield_shield / 100) * 100).toFixed(2)) || 0;
 
     return {
       ...item,
@@ -203,20 +213,28 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       target,
       target_actual,
       diff_prod,
+      diff_prod_grease,
+      diff_prod_shield,
       prod_ok,
       prod_ng,
       yield_rate,
+      yield_grease,
+      yield_shield,
       target_ct,
       diff_ct,
       cycle_t,
       sum_run,
       total_time,
       opn,
+      prod_ng_grease,
+      prod_ng_shield,
       downtime_seconds,
       plan_shutdown,
       availability,
-      performance,
-      oee,
+      performance_grease,
+      performance_shield,
+      oee_grease,
+      oee_shield,
     };
   });
 };

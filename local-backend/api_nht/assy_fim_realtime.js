@@ -27,6 +27,7 @@ const reloadMasterData = async () => {
 
     const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
 
+    
     // 1. เพิ่ม/อัปเดตเครื่องจักรจาก SQL
     for (const row of sqlDataArray) {
       if (machineData.hasOwnProperty(row.mc_no)) {

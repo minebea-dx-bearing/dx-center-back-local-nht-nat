@@ -65,7 +65,9 @@ client.on("message", (topic, message) => {
     const mc_no = topic.split("/").pop();
 
     if (machineData.hasOwnProperty(mc_no)) {
-      const mqttData = JSON.parse(message.toString());
+      let rawData = message.toString();
+      const cleanData = rawData.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
+      const mqttData = JSON.parse(cleanData);
 
       machineData[mc_no] = {
         ...machineData[mc_no],
@@ -75,7 +77,10 @@ client.on("message", (topic, message) => {
       };
     }
   } catch (error) {
-    console.error("MQTT Message Error: ", error);
+    // ถ้ายังพังอยู่ ให้ Print message ออกมาดูว่าตัวที่ 257 คืออะไร
+    console.error("MQTT Message Error at MC:", topic.split("/").pop());
+    console.error("Error Detail:", error.message);
+    console.error("Raw Message (First 300 chars):", message.toString().substring(0, 300));
   }
 });
 

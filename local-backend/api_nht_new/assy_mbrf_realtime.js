@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nht");
+const dbms = require("../instance/ms_instance_nat");
 const mqtt = require("mqtt");
 const moment = require("moment");
 
@@ -65,16 +65,7 @@ client.on("message", (topic, message) => {
     const mc_no = topic.split("/").pop();
 
     if (machineData.hasOwnProperty(mc_no)) {
-      // 1. แปลง message เป็น String
-      let rawData = message.toString();
-
-      // 2. ดักและล้าง Control Characters (อักขระตัวปัญหาที่ทำให้ JSON พัง)
-      // ช่วงอักขระ \x00-\x1F คืออักขระควบคุมที่มักทำให้เกิด SyntaxError ใน JSON
-      const cleanData = rawData.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
-
-      // 3. ลอง Parse ข้อมูลที่ Clean แล้ว
-      const mqttData = JSON.parse(cleanData);
-
+      const mqttData = JSON.parse(message.toString());
       machineData[mc_no] = {
         ...machineData[mc_no],
         ...mqttData,
@@ -83,10 +74,7 @@ client.on("message", (topic, message) => {
       };
     }
   } catch (error) {
-    // ถ้ายังพังอยู่ ให้ Print message ออกมาดูว่าตัวที่ 257 คืออะไร
-    console.error("MQTT Message Error at MC:", topic.split("/").pop());
-    console.error("Error Detail:", error.message);
-    console.error("Raw Message (First 300 chars):", message.toString().substring(0, 300));
+    console.error("MQTT Message Error: ", error);
   }
 });
 
@@ -208,7 +196,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     return {
       // ...item,
-      part_no: item.part_no === "" ? item.model : item.part_no,
+      part_no: item.part_no,
       mc_no: item.mc_no.replace("_f", "").toUpperCase(),
       model: item.model || "NO DATA",
       process: "MBR_F",// item.process.toUpperCase(),
