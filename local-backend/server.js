@@ -64,6 +64,7 @@ app.use("/nat/assy/arp-analysis-by-mc", require("./api_nat/assy_arp_analysis_by_
 app.use("/nat/assy/fim-analysis-by-mc", require("./api_nat/assy_fim_analysis_by_mc"));
 app.use("/nat/assy/avs-analysis-by-mc", require("./api_nat/assy_avs_analysis_by_mc"));
 app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_mc"));
+app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 
 app.use("/nat/assy/report", require("./api_nat/assy_report"));
 
@@ -71,9 +72,14 @@ app.use("/nat/assy/report", require("./api_nat/assy_report"));
 app.use("/nht/assy/mbr-realtime", require("./api_nht/assy_mbr_realtime").router);
 app.use("/nht/assy/mbrf-realtime", require("./api_nht/assy_mbrf_realtime").router);
 app.use("/nht/assy/fim-realtime", require("./api_nht/assy_fim_realtime").router);
+app.use("/nht/assy/gssm-realtime", require("./api_nht/assy_gssm_realtime").router);
+app.use("/nht/assy/ant-realtime", require("./api_nht/assy_ant_realtime").router);
 app.use("/nht/assy/mbr-analysis-by-mc", require("./api_nht/assy_mbr_analysis_by_mc"));
 app.use("/nht/assy/fim-analysis-by-mc", require("./api_nht/assy_fim_analysis_by_mc"));
+app.use("/nht/assy/gssm-analysis-by-mc", require("./api_nht/assy_gssm_analysis_by_mc"));
 app.use("/nht/assy/getDataPart", require("./api_nht/getDataPart"));
+
+app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime").router);
 
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
