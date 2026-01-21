@@ -178,7 +178,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
           SELECT [registered],
               convert(varchar, [registered], 8) AS TIME ,
               [model] ,
-              format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
+              format(iif(DATEPART(HOUR, [registered]) < 8, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
               ${COLUMN_TOTAL} AS daily_total,
@@ -206,9 +206,52 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
       }
 
+      // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
+      const defaultHours = [
+        "07:00",
+        "08:00",
+        "09:00",
+        "10:00",
+        "11:00",
+        "12:00",
+        "13:00",
+        "14:00",
+        "15:00",
+        "16:00",
+        "17:00",
+        "18:00",
+        "19:00",
+        "20:00",
+        "21:00",
+        "22:00",
+        "23:00",
+        "00:00",
+        "01:00",
+        "02:00",
+        "03:00",
+        "04:00",
+        "05:00",
+        "06:00",
+      ];
+      const dataMap = {};
+      data[0].forEach((item) => {
+        const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
+        dataMap[hour] = item.cat_time;
+      });
+
+      // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
+      const finalDate = defaultHours.map((hourStr) => {
+        const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
+
+        // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
+        // ถ้าไม่มีให้ใช้ค่า default (07:00)
+        return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
+      });
+
       res.json({
         data: calData,
         data_raw: data[0],
+        data_date: finalDate,
         success: true,
         message: "ok",
       });
@@ -736,7 +779,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
         ${COLUMN_TOTAL} AS prod_total,
         ${COLUMN_OK} AS prod_ok,
         ${COLUMN_NG} AS prod_ng,
-        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
+        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
         UPPER(p.[mc_no]) AS mc_no,
         FORMAT(p.registered, 'HH:mm') AS cat_time,
         [part_no],

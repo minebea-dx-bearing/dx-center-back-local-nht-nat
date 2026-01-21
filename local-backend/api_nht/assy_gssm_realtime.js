@@ -157,10 +157,10 @@ const queryCurrentRunningTime = async () => {
 };
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
-  // console.log("currentMachineData",currentMachineData);
   
+  // f_ -> Grease, s_ -> Shield
   return Object.values(currentMachineData).map((item) => {
-    let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    let s_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
@@ -171,100 +171,76 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       item.target_special > 0
         ? item.target_special
         : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
-    let target_ct = item.target_ct || 0;
+    let s_target_ct = item.target_ct || 0;
+    let s_target_yield = item.target_yield || 0;
+    let s_target_utl = item.target_utl || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.ok || 0;
-    const prod_ng = item.ng_ro1 + item.ng_ro2_grs + item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap + item.ng_grs || 0;
-    const cycle_t = item.cycletime / 100 || 0;
-    
+    const s_act_pd = item.ok || 0;
+    const ng_pd = item.ng_ro1 + item.ng_ro2_grs + item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap + item.ng_grs || 0;
+    const s_act_ct = item.cycletime / 100 || 0;
+
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
-    const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
 
-    const diff_prod = prod_ok - target_actual;
-    const diff_ct = Number((cycle_t - target_ct).toFixed(2));
+    const diff_prod = s_act_pd - f_target_pd;
+    const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
 
-    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
+    const yield_rate = Number(((s_act_pd / (s_act_pd + ng_pd)) * 100 || 0).toFixed(2));
+
+    const f_diff_pd = item.grease_ok - f_target_pd;
+    const s_diff_pd = item.shield_ok - f_target_pd;
+
+    const f_ng_pd = item.ng_ro1 + item.ng_ro2_grs + item.ng_grs;
+    const s_ng_pd = item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap;
+
+    const f_curr_yield = Number(((item.grease_ok / (item.grease_ok + f_ng_pd)) * 100 || 0).toFixed(2));
+    const s_curr_yield = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) * 100 || 0).toFixed(2));
+
+    const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
-    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
-    
-// ================= OLD =================
-    // const now = moment(item.updated_at);
-    // const start_time = moment().startOf("day").hour(startTime);
-    // const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const performance_grease = Number((((item.grease_ok + f_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const performance_shield = Number((((item.shield_ok + s_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
 
-    // const diff_prod = prod_ok - target_actual;
-    // const diff_ct = Number((cycle_t - target_ct).toFixed(2));
-
-    // const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
-
-    // const diff_prod_grease = item.grease_ok - target_actual;
-    // const diff_prod_shield = item.shield_ok - target_actual;
-
-    // const prod_ng_grease = item.ng_ro1 + item.ng_ro2_grs + item.ng_grs;
-    // const prod_ng_shield = item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap;
-
-    // const yield_grease = Number(((item.grease_ok / (item.grease_ok + prod_ng_grease)) * 100 || 0).toFixed(2));
-    // const yield_shield = Number(((item.shield_ok / (item.shield_ok + prod_ng_shield)) * 100 || 0).toFixed(2));
-
-    // const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
-    // const downtime_seconds = total_time - sum_run - plan_shutdown;
-
-    // const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    // const performance_grease = Number((((item.grease_ok + prod_ng_grease) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
-    // const performance_shield = Number((((item.shield_ok + prod_ng_shield) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
-
-    // const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (yield_grease / 100) * 100).toFixed(2)) || 0;
-    // const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (yield_shield / 100) * 100).toFixed(2)) || 0;
+    const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
-      ...item,
+      // ...item,
+      part_no: item.part_no,
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
-      status_alarm,
       target,
-      target_actual,
-      diff_prod,
-      prod_ok,
-      prod_ng,
-      yield_rate,
-      target_ct,
-      diff_ct,
-      cycle_t,
-      sum_run,
-      total_time,
-      opn,
-      downtime_seconds,
-      plan_shutdown,
-      availability,
-      performance,
-      oee,
-      // status_alarm,
-      // target,
-      // target_actual,
+      f_target_pd,
+      s_target_pd: f_target_pd,
+      f_act_pd: item.grease_ok,
+      S_act_pd: item.shield_ok,
+      s_target_yield,
+      f_diff_pd,
+      s_diff_pd,
+      s_act_pd,
+      s_curr_yield,
+      s_target_ct,
+      s_act_ct,
+      s_diff_ct,
+      s_target_utl,
+      s_curr_utl,
+      s_status_alarm,
       // diff_prod,
-      // diff_prod_grease,
-      // diff_prod_shield,
-      // prod_ok,
-      // prod_ng,
       // yield_rate,
-      // yield_grease,
-      // yield_shield,
-      // target_ct,
-      // diff_ct,
-      // cycle_t,
+      // ng_pd,
+      // f_curr_yield,
       // sum_run,
       // total_time,
       // opn,
-      // prod_ng_grease,
-      // prod_ng_shield,
+      // f_ng_pd,
+      // s_ng_pd,
       // downtime_seconds,
       // plan_shutdown,
       // availability,
@@ -282,21 +258,21 @@ router.get("/machines", async (req, res) => {
     const dataArray = prepareRealtimeData(machineData, runningTime);
     const summary = dataArray.reduce(
       (acc, item) => {
-        acc.total_target += item.target_actual || 0;
-        acc.total_ok += item.prod_ok || 0;
-        acc.total_cycle_t += item.cycle_t || 0;
-        acc.total_opn += item.opn || 0;
+        acc.total_target += item.f_target_pd || 0;
+        acc.total_ok += item.s_act_pd || 0;
+        acc.total_cycle_t += item.s_act_ct || 0;
+        acc.total_utl += item.s_curr_utl || 0;
         acc.count += 1;
         return acc;
       },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 }
+      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
     );
 
     const resultSummary = {
       sum_target: summary.total_target,
       sum_daily_ok: summary.total_ok,
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
+      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
     };
     res.json({ success: true, data: dataArray, resultSummary });
   } catch (error) {

@@ -1,23 +1,28 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nat");
+const dbms = require("../instance/ms_instance_nht");
 const moment = require("moment-timezone");
 
-const DATABASE_PROD = "[nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]";
-const DATABASE_ALARM = "[nat_mc_assy_mbr].[dbo].[DATA_ALARMLIS_MBR]";
-const DATABASE_IOT = "[nat_mc_assy_mbr].[dbo].[MONITOR_IOT]";
-const DATABASE_MASTER = "[nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]";
+const DATABASE_PROD = "[data_machine_gssm].[dbo].[DATA_PRODUCTION_GSSM]";
+const DATABASE_ALARM = "[data_machine_gssm].[dbo].[DATA_ALARMLIST_GSSM]";
+const DATABASE_IOT = "[data_machine_gssm].[dbo].[MONITOR_IOT]";
+const DATABASE_MASTER = "[data_machine_gssm].[dbo].[DATA_MASTER_GSSM]";
 
-const COLUMN_OK = "[daily_ok]";
-const COLUMN_NG = "[daily_ng]";
+const COLUMN_OK = "[ok]";
+const COLUMN_NG = "[ng]";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
-const COLUMN_CT = "[cycle_t]";
+const COLUMN_CT = "[cycletime]";
 
 const calcTargetProd = (timeSeconds, row) => {
   if (row.target_special && row.target_special !== "") {
     return Number((row.target_special / 86400) * timeSeconds);
   }
-  return (timeSeconds / row.target_ct) * (row.target_utl / 100) * (row.target_yield / 100) * row.ring_factor;
+  return (
+    (timeSeconds / row.target_ct) *
+    (row.target_utl / 100) *
+    (row.target_yield / 100) *
+    row.ring_factor
+  );
 };
 
 const calculateShifts = (data, date) => {
@@ -35,7 +40,8 @@ const calculateShifts = (data, date) => {
     const A_start = data.find((r) => r.TIME.startsWith("07:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
-    const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
+    const A_end =
+      data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
 
     if (A_start && A_end) {
       const diff_total = A_end.prod_total;
@@ -43,7 +49,8 @@ const calculateShifts = (data, date) => {
       const seconds = (nowHour - 6) * 3600;
 
       const target_prod = calcTargetProd(seconds, A_start);
-      const utl = (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
+      const utl =
+        (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -68,7 +75,8 @@ const calculateShifts = (data, date) => {
     if (Mrow) {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
-      const utl = (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
+      const utl =
+        (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
       const ach = (Mrow.prod_total / target_prod) * 100;
       const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100;
 
@@ -90,7 +98,10 @@ const calculateShifts = (data, date) => {
       const diff_ng = N_end.prod_ng - N_start.prod_ng;
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, N_start);
-      const utl = (diff_total / (seconds / N_start.target_ct)) * 100 * N_start.ring_factor;
+      const utl =
+        (diff_total / (seconds / N_start.target_ct)) *
+        100 *
+        N_start.ring_factor;
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -141,13 +152,13 @@ const calculateShifts = (data, date) => {
   // -----------------
   // ส่งผลลัพธ์กลับ
   // -----------------
-  //   return { M, N, All };
   return {
     M: M ? [M] : [],
     N: N ? [N] : [],
     All: All ? [All] : [],
+    // DATE: data.length > 0 ? data.map(item => item.cat_time) : defaultHours
   };
-}
+};
 
 // MASTER MACHINE NO.
 router.get("/master_machine", async (req, res) => {
@@ -163,7 +174,9 @@ router.get("/master_machine", async (req, res) => {
     res.json({ data: master[0], success: true, message: "ok" });
   } catch (error) {
     console.error("API Error in /machines: ", error);
-    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
+    res
+      .status(500)
+      .json({ data: [], success: false, message: "Internal Server Error" });
   }
 });
 
@@ -176,7 +189,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       `
           SELECT [registered],
               convert(varchar, [registered], 8) AS TIME ,
-              [model] ,
+              'no model' AS [model] ,
               format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
@@ -202,7 +215,11 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       await calData.push(index_data);
 
       for (let i = 0; i < arrayData.length - 1; i++) {
-        await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
+        await calData.push(
+          arrayData[i + 1].daily_total - arrayData[i].daily_total < 0
+            ? 0
+            : arrayData[i + 1].daily_total - arrayData[i].daily_total
+        );
       }
 
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
@@ -258,14 +275,19 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       res.json({ data: [], data_raw: data[0], success: true, message: "ok" });
     }
   } catch (error) {
-    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
+    res
+      .status(500)
+      .json({ data: [], success: false, message: "Internal Server Error" });
   }
 });
 
 router.get("/status/:mc_no/:date", async (req, res) => {
   try {
     let { mc_no, date } = req.params;
-    let dateTomarrow = moment(date).add(1, "day").endOf("day").format("YYYY-MM-DD");
+    let dateTomarrow = moment(date)
+      .add(1, "day")
+      .endOf("day")
+      .format("YYYY-MM-DD");
 
     let data = await dbms.query(
       `
@@ -710,21 +732,33 @@ router.get("/status/:mc_no/:date", async (req, res) => {
       if (status === "RUN") return "#16C809";
       if (status === "STOP") return "#F40B0B";
       if (!colorMap[status]) {
-        colorMap[status] = palette[Object.keys(colorMap).length % palette.length];
+        colorMap[status] =
+          palette[Object.keys(colorMap).length % palette.length];
       }
       return colorMap[status];
     };
     function generateData(raw) {
       return raw.map((item) => {
-        const start = moment(item.occurred_start).utc().format("YYYY-MM-DD HH:mm:ss");
-        const end = moment(item.occurred_end).utc().format("YYYY-MM-DD HH:mm:ss");
+        const start = moment(item.occurred_start)
+          .utc()
+          .format("YYYY-MM-DD HH:mm:ss");
+        const end = moment(item.occurred_end)
+          .utc()
+          .format("YYYY-MM-DD HH:mm:ss");
         const color = getColor(item.status_alarm);
 
         return {
           ...item,
           color, // ✅ เพิ่ม color ที่ match status_alarm
           name: item.status_alarm,
-          value: [0, start, end, item.duration_seconds, item.occurred_start, item.occurred_end],
+          value: [
+            0,
+            start,
+            end,
+            item.duration_seconds,
+            item.occurred_start,
+            item.occurred_end,
+          ],
           itemStyle: { color },
         };
       });
@@ -774,7 +808,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
       SELECT 
         p.[registered],
         CONVERT(varchar, p.[registered], 8) AS TIME,
-        [model],
+        [part_no] AS [model],
         ${COLUMN_TOTAL} AS prod_total,
         ${COLUMN_OK} AS prod_ok,
         ${COLUMN_NG} AS prod_ng,

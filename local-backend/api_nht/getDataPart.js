@@ -5,7 +5,7 @@ const dbms = require("../instance/ms_instance_nht");
 
 const schedule = require("node-schedule");
 // Script Run Update Part_no to database Master [MBR,GSSM, FIM, AN]
-schedule.scheduleJob("2 * * * *", async function (req, res) {
+schedule.scheduleJob("- * * * *", async function (req, res) {
     try {
         await GetData();
     } catch (error) {
@@ -31,8 +31,6 @@ async function GetData() {
             WHERE rn = 1
             ORDER BY mc_no ASC
         `);
-        console.log("result[0]", result[0]);
-        
         const dataList = result[0]; 
 
         if (dataList.length === 0) {

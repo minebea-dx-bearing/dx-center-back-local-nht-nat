@@ -32,7 +32,7 @@ const calculateShifts = (data, date) => {
   // ถ้าวันที่ = วันนี้  → คำนวณ All แบบ real-time
   // -------------------------------------------------
   if (date === todayStr) {
-    const A_start = data.find((r) => r.TIME.startsWith("08:"));
+    const A_start = data.find((r) => r.TIME.startsWith("07:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
     const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
@@ -64,7 +64,7 @@ const calculateShifts = (data, date) => {
   // -------------------------------------------------
   else {
     // ----------------- M -----------------
-    const Mrow = data.find((r) => r.TIME.startsWith("19:"));
+    const Mrow = data.find((r) => r.TIME.startsWith("18:"));
     if (Mrow) {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
@@ -82,8 +82,8 @@ const calculateShifts = (data, date) => {
     }
 
     // ----------------- N -----------------
-    const N_start = data.find((r) => r.TIME.startsWith("19:"));
-    const N_end = data.find((r) => r.TIME.startsWith("07:"));
+    const N_start = data.find((r) => r.TIME.startsWith("18:"));
+    const N_end = data.find((r) => r.TIME.startsWith("06:"));
     if (N_start && N_end) {
       const diff_total = N_end.prod_total - N_start.prod_total;
       const diff_ok = N_end.prod_ok - N_start.prod_ok;
@@ -189,7 +189,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
           WHERE mc_no = '${mc_no}'
-          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 8, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
           ORDER BY registered ASC
       `
     );
@@ -205,9 +205,52 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
       }
 
+      // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
+      const defaultHours = [
+        "07:00",
+        "08:00",
+        "09:00",
+        "10:00",
+        "11:00",
+        "12:00",
+        "13:00",
+        "14:00",
+        "15:00",
+        "16:00",
+        "17:00",
+        "18:00",
+        "19:00",
+        "20:00",
+        "21:00",
+        "22:00",
+        "23:00",
+        "00:00",
+        "01:00",
+        "02:00",
+        "03:00",
+        "04:00",
+        "05:00",
+        "06:00",
+      ];
+      const dataMap = {};
+      data[0].forEach((item) => {
+        const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
+        dataMap[hour] = item.cat_time;
+      });
+
+      // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
+      const finalDate = defaultHours.map((hourStr) => {
+        const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
+
+        // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
+        // ถ้าไม่มีให้ใช้ค่า default (07:00)
+        return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
+      });
+
       res.json({
         data: calData,
         data_raw: data[0],
+        data_date: finalDate,
         success: true,
         message: "ok",
       });
@@ -747,7 +790,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
           FROM ${DATABASE_PROD} p
           LEFT JOIN ${DATABASE_MASTER} m ON p.mc_no = m.mc_no
       WHERE p.mc_no = '${mc_no}'
-      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
+      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
       ORDER BY registered ASC
     `
   );

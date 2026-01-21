@@ -54,7 +54,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
               ON p.[mc_no] = a.[mc_no]
               AND a.rn = 1
           LEFT JOIN MasterTarget m
-            ON p.[mc_no] = m.[mc_no]
+            ON p.[mc_no] = m.[mc_no] COLLATE Thai_CI_AS
             AND m.rn = 1
           WHERE p.rn = 1
           ORDER BY p.[mc_no];
