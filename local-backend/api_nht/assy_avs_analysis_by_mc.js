@@ -1,17 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nat");
+const dbms = require("../instance/ms_instance_nht");
 const moment = require("moment-timezone");
 
-const DATABASE_PROD = "[nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]";
-const DATABASE_ALARM = "[nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]";
-const DATABASE_IOT = "[nat_mc_mcshop_2gd].[dbo].[MONITOR_IOT]";
-const DATABASE_MASTER = "[nat_mc_mcshop_2gd].[dbo].[DATA_MASTER_2GD]";
+const DATABASE_PROD = "[data_machine_avs].[dbo].[DATA_PRODUCTION_AVS]";
+const DATABASE_ALARM = "[data_machine_avs].[dbo].[DATA_ALARMLIS_AVS]";
+const DATABASE_IOT = "[data_machine_avs].[dbo].[MONITOR_IOT]";
+const DATABASE_MASTER = "[data_machine_avs].[dbo].[DATA_MASTER_AVS]";
 
-const COLUMN_OK = "[prod_total]";
-const COLUMN_NG = "0";
+const COLUMN_OK = "[ok]";
+const COLUMN_NG = "[ng_1] + [ng_2]";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
-const COLUMN_CT = "[eachct]";
+const COLUMN_CT = "[cycletime]";
 
 const calcTargetProd = (timeSeconds, row) => {
   if (row.target_special && row.target_special !== "") {
@@ -32,7 +32,7 @@ const calculateShifts = (data, date) => {
   // ถ้าวันที่ = วันนี้  → คำนวณ All แบบ real-time
   // -------------------------------------------------
   if (date === todayStr) {
-    const A_start = data.find((r) => r.TIME.startsWith("08:"));
+    const A_start = data.find((r) => r.TIME.startsWith("07:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
     const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
@@ -64,7 +64,7 @@ const calculateShifts = (data, date) => {
   // -------------------------------------------------
   else {
     // ----------------- M -----------------
-    const Mrow = data.find((r) => r.TIME.startsWith("19:"));
+    const Mrow = data.find((r) => r.TIME.startsWith("18:"));
     if (Mrow) {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
@@ -82,8 +82,8 @@ const calculateShifts = (data, date) => {
     }
 
     // ----------------- N -----------------
-    const N_start = data.find((r) => r.TIME.startsWith("19:"));
-    const N_end = data.find((r) => r.TIME.startsWith("07:"));
+    const N_start = data.find((r) => r.TIME.startsWith("18:"));
+    const N_end = data.find((r) => r.TIME.startsWith("06:"));
     if (N_start && N_end) {
       const diff_total = N_end.prod_total - N_start.prod_total;
       const diff_ok = N_end.prod_ok - N_start.prod_ok;
@@ -156,7 +156,6 @@ router.get("/master_machine", async (req, res) => {
       `
         SELECT DISTINCT(UPPER(mc_no)) AS mc_no
         FROM ${DATABASE_PROD}
-        WHERE [mc_no] LIKE 'OR%R' -- มีเฉพาะเครื่อง 2nd Out Race
         ORDER BY mc_no ASC
       `
     );
@@ -178,7 +177,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
           SELECT [registered],
               convert(varchar, [registered], 8) AS TIME ,
               [model] ,
-              format(iif(DATEPART(HOUR, [registered]) < 8, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
+              format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
               ${COLUMN_TOTAL} AS daily_total,
@@ -190,7 +189,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
           WHERE mc_no = '${mc_no}'
-          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 8, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
           ORDER BY registered ASC
       `
     );
@@ -779,7 +778,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
         ${COLUMN_TOTAL} AS prod_total,
         ${COLUMN_OK} AS prod_ok,
         ${COLUMN_NG} AS prod_ng,
-        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
+        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
         UPPER(p.[mc_no]) AS mc_no,
         FORMAT(p.registered, 'HH:mm') AS cat_time,
         [part_no],
@@ -791,7 +790,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
           FROM ${DATABASE_PROD} p
           LEFT JOIN ${DATABASE_MASTER} m ON p.mc_no = m.mc_no
       WHERE p.mc_no = '${mc_no}'
-      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
+      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
       ORDER BY registered ASC
     `
   );
