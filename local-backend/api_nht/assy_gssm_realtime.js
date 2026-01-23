@@ -189,14 +189,14 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const yield_rate = Number(((s_act_pd / (s_act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const f_diff_pd = item.grease_ok - f_target_pd;
-    const s_diff_pd = item.shield_ok - f_target_pd;
+    const f_diff_pd = item.ok_grs - f_target_pd;
+    const s_diff_pd = item.ok - f_target_pd;
 
     const f_ng_pd = item.ng_ro1 + item.ng_ro2_grs + item.ng_grs;
     const s_ng_pd = item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap;
 
-    const f_curr_yield = Number(((item.grease_ok / (item.grease_ok + f_ng_pd)) * 100 || 0).toFixed(2));
-    const s_curr_yield = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) * 100 || 0).toFixed(2));
+    const f_curr_yield = Number(((item.ok_grs / (item.ok_grs + f_ng_pd)) * 100 || 0).toFixed(2));
+    const s_curr_yield = Number(((item.ok / (item.ok + s_ng_pd)) * 100 || 0).toFixed(2));
 
     const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
 
@@ -204,8 +204,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance_grease = Number((((item.grease_ok + f_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const performance_shield = Number((((item.shield_ok + s_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const performance_grease = Number((((item.ok_grs + f_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const performance_shield = Number((((item.ok + s_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
 
     const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
     const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
@@ -219,8 +219,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       target,
       f_target_pd,
       s_target_pd: f_target_pd,
-      f_act_pd: item.grease_ok,
-      S_act_pd: item.shield_ok,
+      f_act_pd: item.ok_grs || 0,
+      S_act_pd: item.ok,
       s_target_yield,
       f_diff_pd,
       s_diff_pd,
