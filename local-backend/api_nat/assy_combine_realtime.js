@@ -22,7 +22,12 @@ router.get("/", async (req, res) => {
   const dataALU = prepareALU(machineDataALU(), await currentALU());
 
   const combinedData = [...dataMBRF, ...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAOD, ...dataAVS, ...dataALU].map((item) => {
-    const machineNumber = parseInt(item.mc_no.slice(-2));
+    let machineNumber = 0;
+    if (item.mc_no.includes("ANT")) {
+      machineNumber = parseInt(item.mc_no.slice(-2)) + (parseInt(item.mc_no.slice(-2)) - 1);
+    }else{
+      machineNumber = parseInt(item.mc_no.slice(-2));
+    }
     const lineMaster = machineNumber === 1 || machineNumber === 3? `${item.process}-FIRST` : `${item.process}-SECOND`;
     return {
       ...item,
