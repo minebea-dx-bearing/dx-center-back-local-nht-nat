@@ -135,7 +135,7 @@ SELECT
     [shift],
     [title],
 	' + @colsIsNull + ',
-	' + @avgExpr + ' AS [avg],
+	NULL AS [avg],
     ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -276,7 +276,7 @@ SELECT
     [shift],
     [title],
     ' + @colsIsNull + ',
-    ' + @avgExpr + ' AS [avg],
+    NULL AS [avg],
     ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -401,7 +401,7 @@ SELECT
     [shift],
     [title],
     ' + @colsIsNull + ',
-    ' + @avgExpr + ' AS [avg],
+    NULL AS [avg],
     ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -560,7 +560,7 @@ SELECT
     , [shift]
     , [title]
 	, ' + @colsIsNull + '
-	, ' + @avgExpr + ' AS [avg]
+	, NULL AS [avg]
     , ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -710,7 +710,7 @@ SELECT
     , [shift]
     , [title]
 	, ' + @colsIsNull + '
-	, ' + @avgExpr + ' AS [avg]
+	, NULL AS [avg]
     , ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -844,7 +844,7 @@ SELECT
     [shift],
     [title],
     ' + @colsIsNull + ',
-    ' + @avgExpr + ' AS [avg],
+    NULL AS [avg],
     ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -983,7 +983,7 @@ SELECT
     [shift],
     [title],
     ' + @colsIsNull + ',
-    ' + @avgExpr + ' AS [avg],
+    NULL AS [avg],
     ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -1108,7 +1108,7 @@ SELECT
     , [shift]
     , [title]
 	, ' + @colsIsNull + '
-	, ' + @avgExpr + ' AS [avg]
+	, NULL AS [avg]
     , ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
@@ -1231,7 +1231,7 @@ SELECT
     , [shift]
     , [title]
 	, ' + @colsIsNull + '
-	, ' + @avgExpr + ' AS [avg]
+	, NULL AS [avg]
     , ' + @total + ' AS [total]
 FROM [unpivoted]
 PIVOT (
