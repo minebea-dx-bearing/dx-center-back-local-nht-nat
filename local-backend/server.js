@@ -67,6 +67,7 @@ app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_
 app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 
 app.use("/nat/assy/report", require("./api_nat/assy_report"));
+app.use("/nat/monitor", require("./api_nat/monitor"));
 
 // NHT Routes
 app.use("/nht/assy/mbr-realtime", require("./api_nht/assy_mbr_realtime").router);
