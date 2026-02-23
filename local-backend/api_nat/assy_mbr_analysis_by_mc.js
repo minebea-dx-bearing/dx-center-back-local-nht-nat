@@ -40,7 +40,7 @@ const calculateShifts = (data, date) => {
     if (A_start && A_end) {
       const diff_total = A_end.prod_total;
       const diff_ok = A_end.prod_ok;
-      const seconds = (nowHour - 6) * 3600;
+      const seconds = (nowHour - 6) * 3600; // 6 คือเวลาที่เริ่มกะ M
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl = (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
