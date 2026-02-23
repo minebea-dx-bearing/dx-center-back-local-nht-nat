@@ -32,7 +32,7 @@ const calculateShifts = (data, date) => {
   // ถ้าวันที่ = วันนี้  → คำนวณ All แบบ real-time
   // -------------------------------------------------
   if (date === todayStr) {
-    const A_start = data.find((r) => r.TIME.startsWith("07:"));
+    const A_start = data.find((r) => r.TIME.startsWith("06:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
     const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
@@ -40,7 +40,7 @@ const calculateShifts = (data, date) => {
     if (A_start && A_end) {
       const diff_total = A_end.prod_total;
       const diff_ok = A_end.prod_ok;
-      const seconds = (nowHour - 6) * 3600;
+      const seconds = (nowHour - 5) * 3600;
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl = (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor || 0.00;
@@ -64,10 +64,11 @@ const calculateShifts = (data, date) => {
   // -------------------------------------------------
   else {
     // ----------------- M -----------------
-    const Mrow = data.find((r) => r.TIME.startsWith("18:"));
+    const Mrow = data.find((r) => r.TIME.startsWith("17:"));
     if (Mrow) {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
+      // console.log(Mrow.prod_total ,seconds , Mrow.target_ct, Mrow.ring_factor)
       const utl = (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor || 0.00;
       const ach = (Mrow.prod_total / target_prod) * 100 || 0.00;
       const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100 || 0.00;
@@ -83,14 +84,14 @@ const calculateShifts = (data, date) => {
 
     // ----------------- N -----------------
     const N_start = data.find((r) => r.TIME.startsWith("18:"));
-    const N_end = data.find((r) => r.TIME.startsWith("06:"));
+    const N_end = data.find((r) => r.TIME.startsWith("05:"));
     if (N_start && N_end) {
-      const diff_total = N_end.prod_total - N_start.prod_total;
-      const diff_ok = N_end.prod_ok - N_start.prod_ok;
-      const diff_ng = N_end.prod_ng - N_start.prod_ng;
+      const diff_total = N_end.prod_total;
+      const diff_ok = N_end.prod_ok;
+      const diff_ng = N_end.prod_ng;
       const seconds = 12 * 3600;
-      const target_prod = calcTargetProd(seconds, N_start);
-      const utl = (diff_total / (seconds / N_start.target_ct)) * 100 * N_start.ring_factor || 0.00;
+      const target_prod = calcTargetProd(seconds, N_end);
+      const utl = (diff_total / (seconds / N_end.target_ct)) * 100 * N_end.ring_factor || 0.00;
       const ach = (diff_total / target_prod) * 100 || 0.00;
       const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
 
@@ -177,7 +178,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
           SELECT [registered],
               convert(varchar, [registered], 8) AS TIME ,
               [model] ,
-              format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
+              format(iif(DATEPART(HOUR, [registered]) < 6, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
               ${COLUMN_TOTAL} AS daily_total,
@@ -189,7 +190,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
           WHERE mc_no = '${mc_no}'
-          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 6, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
           ORDER BY registered ASC
       `
     );
@@ -207,6 +208,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
       const defaultHours = [
+        "06:00",
         "07:00",
         "08:00",
         "09:00",
@@ -230,7 +232,6 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         "03:00",
         "04:00",
         "05:00",
-        "06:00",
       ];
       const dataMap = {};
       data[0].forEach((item) => {
@@ -778,7 +779,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
         ${COLUMN_TOTAL} AS prod_total,
         ${COLUMN_OK} AS prod_ok,
         ${COLUMN_NG} AS prod_ng,
-        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
+        FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 6, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
         UPPER(p.[mc_no]) AS mc_no,
         FORMAT(p.registered, 'HH:mm') AS cat_time,
         [part_no],
@@ -790,7 +791,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
           FROM ${DATABASE_PROD} p
           LEFT JOIN ${DATABASE_MASTER} m ON p.mc_no = m.mc_no
       WHERE p.mc_no = '${mc_no}'
-      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
+      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 6, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
       ORDER BY registered ASC
     `
   );
