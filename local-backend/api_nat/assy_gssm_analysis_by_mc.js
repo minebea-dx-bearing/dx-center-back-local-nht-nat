@@ -507,7 +507,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     const colorMap = {};
     const palette = [
       "#F59127",
-      "#3cb44b",
+      "#ebaed3",
       "#ffe119",
       "#0082c8",
       "#f58231",
@@ -729,8 +729,8 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     ];
 
     const getColor = (status) => {
-      if (status === "RUN") return "#16C809";
-      if (status === "STOP") return "#F40B0B";
+      if (status.includes("RUN")) return "#16C809";
+      if (status.includes("STOP")) return "#F40B0B";
       if (!colorMap[status]) {
         colorMap[status] =
           palette[Object.keys(colorMap).length % palette.length];

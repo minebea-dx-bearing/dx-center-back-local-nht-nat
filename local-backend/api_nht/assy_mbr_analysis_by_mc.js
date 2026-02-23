@@ -508,7 +508,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     const colorMap = {};
     const palette = [
       "#F59127",
-      "#3cb44b",
+      "#ebaed3",
       "#ffe119",
       "#0082c8",
       "#f58231",
