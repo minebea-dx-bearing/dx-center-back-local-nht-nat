@@ -31,11 +31,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -200,11 +195,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -332,11 +322,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -455,11 +440,6 @@ CROSS APPLY (SELECT split.value AS col) x;
 SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
-
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
 
 SET @sql = '
 WITH [base] AS (
@@ -620,11 +600,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -768,11 +743,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -905,11 +875,6 @@ CROSS APPLY (SELECT split.value AS col) x;
 SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
-
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
 
 
 SET @sql = '
@@ -1046,11 +1011,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -1162,11 +1122,6 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
-SELECT @dayCount = COUNT(*)
-FROM STRING_SPLIT(@cols, ',');
-
-SET @avgExpr = '(' + @total + ') / ' + CAST(@dayCount AS varchar(5));
-
 SET @sql = '
 WITH [base] AS (
     SELECT 
@@ -1257,6 +1212,1107 @@ EXEC sp_executesql
     return avs[0]
 };
 
+
+// ----------- report -------------
+const queryMbrReport = async (month) => {
+    const mbr = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [mbrf] AS (
+    SELECT 
+        [registered]
+		,LEFT([process], 3) AS [process]
+        , CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        , REPLACE([mc_no], ''_f'','''') AS [mc_no]
+        , [a_meas] as [total_gauge]
+    FROM [nat_mc_assy_mbr_f].[dbo].[DATA_PRODUCTION_MBR_F]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[mbr] AS (
+    SELECT 
+        [registered]
+		,[process]
+        , CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        , [mc_no]
+        , ([c1_ng] + [c2_ng] + [c3_ng] + [c4_ng] + [c5_ng]) AS [pallet_ng]
+        , [daily_ok]
+        , ([ball_q] + [sep_ng_2]) AS [turn_table_ng]
+        , [d2_ng] AS [retainer_ng]
+    FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+),
+[merge] AS (
+	SELECT
+		mbrf.[work_date]
+		,mbrf.[process]
+		,mbrf.[mc_no]
+		,Null AS [count_mc_no]
+		,ct.[target_ct]
+		,mbrf.[total_gauge] AS [prod_utl]
+		,ct.[target_special]
+		,([daily_ok] + [pallet_ng] + [turn_table_ng] + [retainer_ng]) AS [total_prod]
+		,([daily_ok] - ct.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [mbrf]
+	LEFT JOIN [mbr] 
+	ON mbrf.[work_date] = mbr.[work_date] AND mbrf.[mc_no] = mbr.[mc_no]
+	LEFT JOIN [master] ct
+	ON mbrf.[mc_no] = ct.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([prod_utl]) AS [prod_utl]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([prod_utl] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([prod_utl]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+    `);
+  return mbr[0]
+};
+
+const queryArpReport = async (month) => {
+  const arp = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [arp] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[daily_ok]
+        ,([daily_ok] + [ng_pos] + [ng_neg]) AS [total_prod]
+    FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [arp] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+    `);
+  return arp[0]
+};
+
+const queryGssmReport = async (month) => {
+  const gssm = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [gssm] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[grease_ok] AS [prod_utl]
+        ,[shield_ok] AS [daily_ok]
+        ,([shield_ok] + [shield_a_ng] + [shield_b_ng] + [snap_a_ng] + [snap_b_ng]) AS [total_prod]
+    FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[prod_utl]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [gssm] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 4)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([prod_utl]) AS [prod_utl]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([prod_utl] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([prod_utl]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+      `);
+  return gssm[0]
+};
+
+const queryFimReport = async (month) => {
+  const fim = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [fim] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[fim_ok] AS [daily_ok]
+        ,([fim_ok] + [id_ng] + [od_ng] + [width_ng] + [chamfer_ng] + [mix_ng]) AS [total_prod]
+    FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [fim] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+        `);
+  return fim[0]
+};
+
+const queryAntReport = async (month) => {
+    const ant = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [antr] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[ok_rear] AS [daily_ok]
+        ,([ok_rear] + [ag_rear] + [ng_rear] + [mixball_rear]) AS [total_prod]
+    FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[antf] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[ok_front] AS [daily_ok]
+        ,([ok_front] + [ag_front] + [ng_front] + [mixball_front]) AS [total_prod]
+    FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,LEFT(prod.[mc_no], 3) + ''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT(prod.[mc_no], 2)) + (CONVERT(INT, RIGHT(prod.[mc_no], 2)) - 1)) AS [mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [antr] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+	UNION
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,LEFT(prod.[mc_no], 3) + ''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT(prod.[mc_no], 2)) * 2)) AS [mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [antf] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+`);
+    return ant[0]
+};
+
+const queryAodReport = async (month) => {
+    const aod = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [aod] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[daily_ok]
+        ,([daily_ok] + [daily_ag]) AS [total_prod]
+    FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [aod] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+          `);
+    return aod[0]
+};
+
+const queryAvsReport = async (month) => {
+    const avs = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [aod] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[daily_ok]
+        ,([daily_ok] + [daily_ag1] + [daily_ag2]) AS [total_prod]
+    FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [aod] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+    `);
+    return avs[0]
+};
+
+
+// ----------------router -----------------
 router.post("/data", async (req, res) => {
   try {
     const {selectedMonth, selectedProcess} = req.body;
@@ -1317,6 +2373,70 @@ router.post("/data", async (req, res) => {
             mergedMbr = [...mbrf, ...mbr];
             mergedAnt = [...antf, ...antr];
             data = [mergedMbr, arp, gssm, fim, mergedAnt, aod, avs];
+    }
+
+    res.json({ success: true, data: data });
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+});
+
+
+// ---------------- report ----------------
+router.post("/data_report", async (req, res) => {
+  try {
+    const {selectedMonth, selectedProcess, tab} = req.body;
+    console.log("Received month:", selectedMonth, "Received process:", selectedProcess);
+    let mbr = {};
+    let arp = {};
+    let gssm = {};
+    let fim = {};
+    let ant = {};
+    let aod = {};
+    let avs = {};
+    let data = [];
+    switch (selectedProcess){
+        case "mbr": 
+            mbr = await queryMbrReport(selectedMonth);
+            (tab === 'report') ? data = [mbr] : data = [...mbr];
+            break;
+        case "arp":
+            arp = await queryArpReport(selectedMonth);
+            (tab === 'report') ? data = [arp] : data = [...arp];
+            break;
+        case "gssm":
+            gssm = await queryGssmReport(selectedMonth);
+            (tab === 'report') ? data = [gssm] : data = [...gssm];
+            break;
+        case "fim":
+            fim = await queryFimReport(selectedMonth);
+            (tab === 'report') ? data = [fim] : data = [...fim];
+            break;
+        case "ant": 
+            ant = await queryAntReport(selectedMonth);
+            (tab === 'report') ? data = [ant] : data = [...ant];
+            break;
+        case "aod":
+            aod = await queryAodReport(selectedMonth);
+            (tab === 'report') ? data = [aod] : data = [...aod];
+            break;
+        case "avs":
+            avs = await queryAvsReport(selectedMonth);
+            (tab === 'report') ? data = [avs] : data = [...avs];
+            break;
+        default:
+            mbr = await queryMbrReport(selectedMonth);
+            arp = await queryArpReport(selectedMonth);
+            gssm = await queryGssmReport(selectedMonth);
+            fim = await queryFimReport(selectedMonth);
+            ant = await queryAntReport(selectedMonth);
+            aod = await queryAodReport(selectedMonth);
+            avs = await queryAvsReport(selectedMonth);
+            (tab === 'report') ? data = [mbr, arp, gssm, fim, ant, aod, avs] : data = [...mbr, ...arp, ...gssm, ...fim, ...ant, ...aod, ...avs];
     }
 
     res.json({ success: true, data: data });
