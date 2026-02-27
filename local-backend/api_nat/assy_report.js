@@ -1223,6 +1223,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -1242,6 +1243,10 @@ CROSS APPLY (SELECT split.value AS col) x;
 SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
 SET @sql = '
 WITH [mbrf] AS (
@@ -1278,7 +1283,10 @@ WITH [mbrf] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+	SELECT [mc_no], [target_special], [target_ct] 
+	FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
+	WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1327,7 +1335,7 @@ WITH [mbrf] AS (
 		,[target_special]
 		,[daily_ok]
 		,[diff]
-		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([prod_utl] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+		,CASE WHEN [mc_no] = ''MBR'' THEN  ROUND(([prod_utl] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
 			ELSE  ROUND(([prod_utl]/(84600/[target_ct])) * 100, 2)
 		END AS [utl]
 		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
@@ -1378,8 +1386,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
     `);
   return mbr[0]
 };
@@ -1393,6 +1402,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -1413,6 +1423,10 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
+
 SET @sql = '
 WITH [arp] AS (
     SELECT 
@@ -1431,7 +1445,10 @@ WITH [arp] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1527,8 +1544,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
     `);
   return arp[0]
 };
@@ -1542,6 +1560,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -1562,6 +1581,10 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
+
 SET @sql = '
 WITH [gssm] AS (
     SELECT 
@@ -1581,7 +1604,10 @@ WITH [gssm] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1679,8 +1705,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
       `);
   return gssm[0]
 };
@@ -1694,6 +1721,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -1714,6 +1742,10 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
+
 SET @sql = '
 WITH [fim] AS (
     SELECT 
@@ -1732,7 +1764,10 @@ WITH [fim] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1828,8 +1863,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
         `);
   return fim[0]
 };
@@ -1843,6 +1879,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -1862,6 +1899,10 @@ CROSS APPLY (SELECT split.value AS col) x;
 SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
 SET @sql = '
 WITH [antr] AS (
@@ -1897,7 +1938,10 @@ WITH [antr] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -2007,8 +2051,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
 `);
     return ant[0]
 };
@@ -2022,6 +2067,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -2041,6 +2087,10 @@ CROSS APPLY (SELECT split.value AS col) x;
 SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
 SET @sql = '
 WITH [aod] AS (
@@ -2060,7 +2110,10 @@ WITH [aod] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -2156,8 +2209,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
           `);
     return aod[0]
 };
@@ -2171,6 +2225,7 @@ DECLARE @sql nvarchar(max);
 DECLARE @total nvarchar(max);
 DECLARE @dayCount nvarchar(max);
 DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
 
 ;WITH Dates AS (
     SELECT CAST(@Month AS date) AS d
@@ -2191,6 +2246,10 @@ SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
 FROM STRING_SPLIT(@cols, ',') split
 CROSS APPLY (SELECT split.value AS col) x;
 
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
+
 SET @sql = '
 WITH [aod] AS (
     SELECT 
@@ -2209,7 +2268,10 @@ WITH [aod] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
+	SELECT [mc_no], [target_special], [target_ct] 
+    FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
+    WHERE [registered] >= @NearestMonth 
+	  AND [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -2305,8 +2367,9 @@ END;
 
 EXEC sp_executesql 
     @sql,
-    N'@Month date',
-    @Month = @Month;
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
     `);
     return avs[0]
 };
@@ -2399,34 +2462,42 @@ router.post("/data_report", async (req, res) => {
     let aod = {};
     let avs = {};
     let data = [];
+    let dataSum = [];
     switch (selectedProcess){
         case "mbr": 
             mbr = await queryMbrReport(selectedMonth);
-            (tab === 'report') ? data = [mbr] : data = [...mbr];
+            data = [mbr]
+            dataSum = [...mbr];
             break;
         case "arp":
             arp = await queryArpReport(selectedMonth);
-            (tab === 'report') ? data = [arp] : data = [...arp];
+            data = [arp]
+            dataSum = [...arp];
             break;
         case "gssm":
             gssm = await queryGssmReport(selectedMonth);
-            (tab === 'report') ? data = [gssm] : data = [...gssm];
+            data = [gssm]
+            dataSum = [...gssm];
             break;
         case "fim":
             fim = await queryFimReport(selectedMonth);
-            (tab === 'report') ? data = [fim] : data = [...fim];
+            data = [fim]
+            dataSum = [...fim];
             break;
         case "ant": 
             ant = await queryAntReport(selectedMonth);
-            (tab === 'report') ? data = [ant] : data = [...ant];
+            data = [ant]
+            dataSum = [...ant];
             break;
         case "aod":
             aod = await queryAodReport(selectedMonth);
-            (tab === 'report') ? data = [aod] : data = [...aod];
+            data = [aod]
+            dataSum = [...aod];
             break;
         case "avs":
             avs = await queryAvsReport(selectedMonth);
-            (tab === 'report') ? data = [avs] : data = [...avs];
+            data = [avs]
+            dataSum = [...avs];
             break;
         default:
             mbr = await queryMbrReport(selectedMonth);
@@ -2436,10 +2507,11 @@ router.post("/data_report", async (req, res) => {
             ant = await queryAntReport(selectedMonth);
             aod = await queryAodReport(selectedMonth);
             avs = await queryAvsReport(selectedMonth);
-            (tab === 'report') ? data = [mbr, arp, gssm, fim, ant, aod, avs] : data = [...mbr, ...arp, ...gssm, ...fim, ...ant, ...aod, ...avs];
+            data = [mbr, arp, gssm, fim, ant, aod, avs]
+            dataSum = [...mbr, ...arp, ...gssm, ...fim, ...ant, ...aod, ...avs];
     }
 
-    res.json({ success: true, data: data });
+    res.json({ success: true, data: data, dataSum: dataSum });
   } catch (error) {
     console.error("Error fetching data:", error);
     res.status(500).json({
