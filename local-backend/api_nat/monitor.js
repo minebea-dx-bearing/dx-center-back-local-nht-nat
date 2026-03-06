@@ -31,41 +31,17 @@ const port = (selectedProcess) => {
     }
 }
 
-router.post("/get_status_mqtt", async (req, res) => {
-  try {
-    const {selectedProcess} = req.body;
-    const mc_shop = ['tn', '1gd', '2gd']
-    let ip = 111;
-    let get_mc = {}
-
-    if(mc_shop.includes(selectedProcess)){
-        ip = 110
-        get_mc = await dbms.query(`
-            SELECT DISTINCT(mc_no) as mc_no
-            FROM [nat_mc_mcshop_${selectedProcess}].[dbo].[DATA_PRODUCTION_${selectedProcess.toUpperCase()}]
-            WHERE mc_no != 'tb16'
-            ORDER BY mc_no ASC`)
-    }
-    else{
-        get_mc = await dbms.query(`
-            SELECT DISTINCT(mc_no) as mc_no
-            FROM [nat_mc_assy_${selectedProcess}].[dbo].[DATA_PRODUCTION_${selectedProcess === "ant_new" ? selectedProcess.split("_",1)[0].toUpperCase() : selectedProcess.toUpperCase()}]
-            ORDER BY mc_no ASC`)
-    }
-
-    const mcList = get_mc[0];
-    const results = {};
-    await Promise.all(
-        mcList.map((mc) => {
-            const topicStatus = `status/nat/${selectedProcess === "ant_new" ? selectedProcess.split("_",1)[0] : selectedProcess}/${mc.mc_no.toLowerCase()}`;
-            const topicMqtt = `mqtt/nat/${selectedProcess === "ant_new" ? selectedProcess.split("_",1)[0] : selectedProcess}/${mc.mc_no.toLowerCase()}`;
-            // console.log(topicStatus, topicMqtt)
-            
-            return new Promise(async (resolve) => {
+const queryData = (mcList, process, results, ip, sort) => Promise.all(
+    mcList.map((mc) => {
+        const topicStatus = `status/nat/${process === "ant_new" ? process.split("_",1)[0] : process}/${mc.mc_no.toLowerCase()}`;
+        const topicMqtt = `mqtt/nat/${process === "ant_new" ? process.split("_",1)[0] : process}/${mc.mc_no.toLowerCase()}`;
+        // console.log(topicStatus, topicMqtt)
+        
+        return new Promise(async (resolve) => {
             try {
                 const [statusRes, mqttRes] = await Promise.all([
-                axios.get(`http://10.128.16.${ip}:${port(selectedProcess)}/query?pretty=true&db=influx&q=SELECT "status", "topic" FROM mqtt_consumer WHERE "topic" = '${topicStatus}' ORDER BY time DESC LIMIT 1`),
-                axios.get(`http://10.128.16.${ip}:${port(selectedProcess)}/query?pretty=true&db=influx&q=SELECT "broker", "modbus", "topic" FROM mqtt_consumer WHERE topic = '${topicMqtt}' ORDER BY time DESC LIMIT 10`)
+                axios.get(`http://10.128.16.${ip}:${port(process)}/query?pretty=true&db=influx&q=SELECT "status", "topic" FROM mqtt_consumer WHERE "topic" = '${topicStatus}' ORDER BY time DESC LIMIT 1`),
+                axios.get(`http://10.128.16.${ip}:${port(process)}/query?pretty=true&db=influx&q=SELECT "broker", "modbus", "topic" FROM mqtt_consumer WHERE topic = '${topicMqtt}' ORDER BY time DESC LIMIT 10`)
                 ]);
 
                 // ------- ตรวจสอบ status -------
@@ -124,19 +100,6 @@ router.post("/get_status_mqtt", async (req, res) => {
                     statusMqtt.modbus = "off";
                     }
                 }
-                // // broker
-                // if (brokers.includes(0) || brokers.includes("0")) {
-                //   statusMqtt.broker = "off";
-                // } else if (brokers.every(val => val == 1)) {
-                //   statusMqtt.broker = "on";
-                // }
-
-                // // modbus
-                // if (modbuses.includes(0) || modbuses.includes("0")) {
-                //   statusMqtt.modbus = "off";
-                // } else if (modbuses.every(val => val == 1)) {
-                //   statusMqtt.modbus = "on";
-                // }
                 }
 
                 // บันทึกค่าลงใน results โดยใช้ mc_no เป็น key
@@ -146,6 +109,7 @@ router.post("/get_status_mqtt", async (req, res) => {
                 status,
                 iot_broker: statusMqtt.broker,
                 iot_modbus: statusMqtt.modbus,
+                count: sort
                 };
 
             } catch (err) {
@@ -159,13 +123,43 @@ router.post("/get_status_mqtt", async (req, res) => {
                 iot_modbus: "-",
                 };
             }
-
             resolve();
         });
-      })
-    );
+    })
+);
 
-    const resultArray = Object.values(results);
+router.post("/get_status_mqtt", async (req, res) => {
+  try {
+    const {selectedProcess} = req.body;
+    let ip = 111;
+    let get_mc = {}
+    const assy = ["mbr", "mbr_f", "arp", "gssm", "fim", "ant_new", "aod", "avs"]
+    let resultArray = []
+    let results = {};
+    let sort = 0
+    if(selectedProcess === 'assy'){
+        for(let process=0; process<assy.length; process++){
+            get_mc = await dbms.query(`
+                SELECT DISTINCT(mc_no) as mc_no
+                FROM [nat_mc_assy_${assy[process]}].[dbo].[DATA_PRODUCTION_${assy[process] === "ant_new" ? assy[process].split("_",1)[0].toUpperCase() : assy[process].toUpperCase()}]
+                ORDER BY mc_no ASC`)
+            const mcList = get_mc[0];
+            sort += 1
+            await queryData(mcList, assy[process], results, ip, sort)
+        }
+    }
+    else{
+        ip = 110
+        get_mc = await dbms.query(`
+            SELECT DISTINCT(mc_no) as mc_no
+            FROM [nat_mc_mcshop_${selectedProcess}].[dbo].[DATA_PRODUCTION_${selectedProcess.toUpperCase()}]
+            WHERE mc_no != 'tb16'
+            ORDER BY mc_no ASC`)
+        const mcList = get_mc[0];
+        await queryData(mcList, selectedProcess, results, ip, sort)
+    }
+    resultArray.push(...Object.values(results))
+
     return res.json({ data: resultArray, success: true, });
   } catch (error) {
     console.error("get_time_status error:", error.message);

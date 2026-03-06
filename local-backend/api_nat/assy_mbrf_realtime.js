@@ -65,7 +65,9 @@ client.on("message", (topic, message) => {
     const mc_no = topic.split("/").pop();
 
     if (machineData.hasOwnProperty(mc_no)) {
-      const mqttData = JSON.parse(message.toString());
+      const cleanJSON = message.toString().replace(/[\x00-\x1F\x7F-\x9F]/g, "");
+      const mqttData = JSON.parse(cleanJSON);
+      
       machineData[mc_no] = {
         ...machineData[mc_no],
         ...mqttData,
