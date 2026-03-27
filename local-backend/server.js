@@ -15,6 +15,7 @@ app.use("/nat/tn/tn-daily", require("./api_nat/tn_tn_daily"));
 app.use("/nat/tn/tn-summary", require("./api_nat/tn_tn_summary"));
 app.use("/nat/tn/tn-analysis-by-mc", require("./api_nat/tn_tn_analysis_by_mc"));
 
+app.use("/nat/gd/2gdcombine-realtime", require("./api_nat/gd_2gd_combine_realtime"));
 app.use("/nat/gd/2ndinbore-realtime", require("./api_nat/gd_2ndInBore_realtime").router);
 app.use("/nat/gd/2ndinbore-daily", require("./api_nat/gd_2gdInBore_daily"));
 app.use("/nat/gd/2ndinbore-analysis-by-mc", require("./api_nat/gd_2ndInBore_analysis_by_mc"));

@@ -11,16 +11,16 @@ const determineMachineStatus = require("../util/determineMachineStatus");
 let machineData = {};
 
 // --- Configurations ---
-const process = "GD";
+const processName = "GD";
 const MQTT_SERVER = "10.128.16.200";
 const PORT = "1883";
 const startTime = 7; // start time 07:00
-const DATABASE_PROD = `[data_machine_gd2].[dbo].[DATA_PRODUCTION_${process.toUpperCase()}]`;
-const DATABASE_ALARM = `[data_machine_gd2].[dbo].[DATA_ALARMLIS_${process.toUpperCase()}]`;
-const DATABASE_MASTER = `[data_machine_gd2].[dbo].[DATA_MASTER_${process.toUpperCase()}]`;
+const DATABASE_PROD = `[data_machine_gd2].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
+const DATABASE_ALARM = `[data_machine_gd2].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
+const DATABASE_MASTER = `[data_machine_gd2].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
-  console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${process.toUpperCase()} data from SQL...`);
+  console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
   try {
     const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER);
     if (!sqlDataArray) return;
@@ -41,23 +41,23 @@ const reloadMasterData = async () => {
 
     for (const mc_no in machineData) {
       if (!sqlDataMap.has(mc_no)) {
-        console.log(`Machine ${process.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
+        console.log(`Machine ${processName.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
         delete machineData[mc_no];
       }
     }
 
-    console.log(`Master data reloaded. Total machines ${process.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
+    console.log(`Master data reloaded. Total machines ${processName.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
   } catch (error) {
-    console.error("Failed to reload master ${process.toUpperCase()} data:", error);
+    console.error("Failed to reload master ${processName.toUpperCase()} data:", error);
   }
 };
 
 // MQTT connect
-const client = mqtt.connect(`mqtt://${MQTT_SERVER}:${PORT}`);
+const client = mqtt.connect(`mqtt://${process.env.NHT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
 client.on("connect", () => {
   console.log("MQTT Connected");
   client.subscribe("#", (err) => {
-    if (!err) console.log(`Subscribed to all topics (#) for ${process.toUpperCase()}`);
+    if (!err) console.log(`Subscribed to all topics (#) for ${processName.toUpperCase()}`);
   });
 });
 client.on("message", (topic, message) => {
