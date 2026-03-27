@@ -1,7 +1,7 @@
 const mqtt = require("mqtt");
 
 // กำหนด URL broker ของคุณ
-const MQTT_BROKER_URL = `mqtt:${process.env.NAT_MQTT_MC_SHOP}//:1883`;
+const MQTT_BROKER_URL = `mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`;
 
 // สร้าง client
 const client = mqtt.connect(MQTT_BROKER_URL);
