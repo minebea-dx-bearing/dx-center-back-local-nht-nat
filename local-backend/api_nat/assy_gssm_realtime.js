@@ -214,7 +214,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       part_no: item.part_no,
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
-      processName: item.process.toUpperCase(),
+      process: item.process.toUpperCase(),
       target,
       f_target_pd,
       s_target_pd: f_target_pd,
