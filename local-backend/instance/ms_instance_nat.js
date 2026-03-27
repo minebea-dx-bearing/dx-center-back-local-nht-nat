@@ -5,6 +5,7 @@ const dbms = new Sequelize({
     host: process.env.NAT_SERVER,
     username: process.env.NAT_SERVER_USERNAME,
     password: process.env.NAT_SERVER_PASSWORD,
+    // port: process.env.NAT_PORT, //only TWN
     dialectOptions: {
         options: {
             requestTimeout: 60000,
