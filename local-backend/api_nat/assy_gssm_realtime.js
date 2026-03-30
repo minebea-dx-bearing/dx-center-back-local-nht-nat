@@ -197,6 +197,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const f_curr_yield = Number(((item.grease_ok / (item.grease_ok + f_ng_pd)) * 100 || 0).toFixed(2));
     const s_curr_yield = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) * 100 || 0).toFixed(2));
 
+    const yield_calc_total = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) || 0));
+
     const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
@@ -231,6 +233,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       s_target_utl,
       s_curr_utl,
       s_status_alarm,
+      f_yield_calc_total: yield_calc_total, 
+      s_yield_calc_total: yield_calc_total
       // diff_prod,
       // yield_rate,
       // ng_pd,

@@ -186,6 +186,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
 
     const s_curr_yield = Number(((s_act_pd / (s_act_pd + s_ng_pd)) * 100 || 0).toFixed(2));
+    const yield_calc_total = Number(((s_act_pd / (s_act_pd + s_ng_pd)) || 0));
     
     const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
 
@@ -216,6 +217,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       s_target_utl,
       s_downtime_seconds,
       s_oee,
+      f_yield_calc_total: yield_calc_total, 
+      s_yield_calc_total: yield_calc_total
       // s_ng_pd,
       // sum_run,
       // total_time,

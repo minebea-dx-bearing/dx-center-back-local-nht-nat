@@ -186,6 +186,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
+    const yield_calc_total = Number(((act_pd / (act_pd + ng_pd)) || 0));
+
     const curr_utl = Number((((act_pd + ng_pd) / ((now.diff(start_time, "second") * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
@@ -220,6 +222,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       availability,
       performance,
       oee,
+      f_yield_calc_total: yield_calc_total, 
+      s_yield_calc_total: yield_calc_total
     };
   });
 };

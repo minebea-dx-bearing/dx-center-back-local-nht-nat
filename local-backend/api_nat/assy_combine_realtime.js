@@ -59,6 +59,24 @@ router.get("/", async (req, res) => {
     return acc;
   }, {}); // `{}` คือค่าเริ่มต้นของ accumulator (object ว่าง)
 
+  // const calcYield = Object.keys(finalStructure).map((item) => {
+  //   console.log(finalStructure[item])
+  //   const totals = {};
+  //   const innerData = finalStructure[item];
+  
+  //   Object.entries(innerData).forEach(([key, value]) => {
+  //       // แยกชื่อกลุ่มออกมาจากหลังขีด (เช่น "FIRST", "SECOND")
+  //       const suffix = key.split('-')[1]; 
+        
+  //       if (!totals[suffix]) totals[suffix] = 0;
+  //       totals[suffix] += value.p;
+  //   });
+  
+  //   console.log(totals); 
+  // })
+
+  // ผลลัพธ์: { FIRST: 24, SECOND: 44 }
+
   res.json({
     success: true,
     message: "NAT Assembly Combine Realtime API is working",
