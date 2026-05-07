@@ -19,11 +19,6 @@ const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_
 const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
-const logDurationMs = (label, startNs) => {
-  const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
-  console.log(`[${moment().format("HH:mm:ss")}] ${label} took ${durationMs.toFixed(2)} ms`);
-};
-
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
   try {
@@ -85,10 +80,8 @@ client.on("message", (topic, message) => {
 });
 
 const queryCurrentRunningTime = async () => {
-  const startNs = process.hrtime.bigint();
-  try {
-    const result = await dbms.query(
-      `
+  const result = await dbms.query(
+    `
         DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
@@ -164,16 +157,12 @@ const queryCurrentRunningTime = async () => {
             DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
         GROUP BY [mc_no], [alarm_base]
-    `
-    );
-    return result[1] > 0 ? result[0] : [];
-  } finally {
-    logDurationMs("queryCurrentRunningTime", startNs);
-  }
+    `,
+  );
+  return result[1] > 0 ? result[0] : [];
 };
 
 const prepareRealtimeData = (currentMachineData, runningTimeData) => {
-  const startNs = process.hrtime.bigint();
   const result = Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
@@ -203,7 +192,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
     const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const curr_utl = Number(((( act_pd + ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / target_ct)) * 100).toFixed(2)) || 0;
+    const curr_utl = Number((((act_pd + ng_pd) / ((now.diff(start_time, "second") * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
@@ -217,7 +206,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
-      subProcess: item.process.toUpperCase()+"-IB",
+      subProcess: item.process.toUpperCase() + "-IB",
       status_alarm,
       target,
       target_pd,
@@ -239,7 +228,6 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       oee,
     };
   });
-  logDurationMs("prepareRealtimeData", startNs);
   return result;
 };
 
@@ -247,7 +235,6 @@ router.get("/machines", async (req, res) => {
   try {
     const runningTime = await queryCurrentRunningTime();
     const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("B"));
-    const summaryStartNs = process.hrtime.bigint();
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_pd || 0;
@@ -257,7 +244,7 @@ router.get("/machines", async (req, res) => {
         acc.count += 1;
         return acc;
       },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
+      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
     );
 
     const resultSummary = {
@@ -266,7 +253,6 @@ router.get("/machines", async (req, res) => {
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
       avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
     };
-    logDurationMs("resultSummary", summaryStartNs);
     res.json({ success: true, data: dataArray, resultSummary });
   } catch (error) {
     console.error("API Error in /machines: ", error);
