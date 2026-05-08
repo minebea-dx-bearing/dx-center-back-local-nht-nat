@@ -6,6 +6,7 @@ const moment = require("moment");
 
 const master_mc_no_front_rear = require("../util/mqtt_master_mc_no_front_rear");
 const determineMachineStatus = require("../util/determineMachineStatus");
+const shiftWindow = require("../util/shiftWindow");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -158,7 +159,9 @@ const queryCurrentRunningTime = async () => {
   return result[1] > 0 ? result[0] : [];
 };
 
-const prepareRealtimeData = (currentMachineData, runningTimeData) => {
+const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
+
   // f_ -> Rear, s_ -> Front
   return Object.values(currentMachineData).map((item) => {
     const s_status_alarm = determineMachineStatus(item, item.alarm_front, item.occurred_front);
@@ -179,10 +182,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const total_time_rear = runInfoRear.total_time || 0;
     const opn_rear = total_time_rear > 0 ? Number(((sum_run_rear / total_time_rear) * 100).toFixed(2)) : 0;
 
-    let target =
-      item.target_special > 0
-        ? item.target_special
-        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    let target = 0;
+    if (item.target_special > 0) {
+      target = item.target_special;
+    } else if (item.target_ct > 0) {
+      target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    }
     let s_target_ct = item.target_ct || 0;
     let s_target_yield = item.target_yield || 0;
     let s_target_utl = item.target_utl || 0;
@@ -198,9 +203,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const s_act_ct = item.cycle_time_front / 100 || 0;
     const f_act_ct = item.cycle_time_rear / 100 || 0;
 
-    const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
-    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const diff_prod = prod_ok - f_target_pd;
     const diff_ct = Number((cycle_t - s_target_ct).toFixed(2));
@@ -219,8 +222,14 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
     const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
 
-    const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
-    const f_curr_utl = Number(((( f_act_pd + f_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
+    const s_curr_utl =
+      elapsedSec > 0
+        ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
+        : 0;
+    const f_curr_utl =
+      elapsedSec > 0
+        ? Number((((f_act_pd + f_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
+        : 0;
     
     const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
@@ -299,8 +308,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
 router.get("/machines", async (req, res) => {
   try {
+    const now = moment();
     const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime);
+    const dataArray = prepareRealtimeData(machineData, runningTime, now);
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.f_target_pd || 0;
