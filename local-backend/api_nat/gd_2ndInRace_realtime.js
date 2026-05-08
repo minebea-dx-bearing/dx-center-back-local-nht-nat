@@ -6,6 +6,7 @@ const moment = require("moment");
 
 const master_mc_no = require("../util/mqtt_master_mc_no");
 const determineMachineStatus = require("../util/determineMachineStatus");
+const shiftWindow = require("../util/shiftWindow");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -18,6 +19,11 @@ const startTime = 7; // start time 07:00
 const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
+
+const isInRaceMachine = (mc_no) => {
+  const id = (mc_no || "").toUpperCase();
+  return id.startsWith("IR") && id.endsWith("R");
+};
 
 const reloadMasterData = async () => {
   console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
@@ -156,7 +162,9 @@ const queryCurrentRunningTime = async () => {
   return result[1] > 0 ? result[0] : [];
 };
 
-const prepareRealtimeData = (currentMachineData, runningTimeData) => {
+const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
+  const { start_time, elapsedMin, elapsedSec } = shiftWindow(now, startTime);
+
   return Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
@@ -165,10 +173,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-    let target =
-      item.target_special > 0
-        ? item.target_special
-        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    let target = 0;
+    if (item.target_special > 0) {
+      target = item.target_special;
+    } else if (item.target_ct > 0) {
+      target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    }
     let target_ct = item.target_ct || 0;
     let target_utl = item.target_utl || 0;
 
@@ -177,16 +187,17 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const ng_pd = 0;
     const act_ct = item.eachct / 100 || 0;
 
-    const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
-    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const diff_pd = act_pd - target_pd;
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
     const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const curr_utl = Number(((( act_pd + ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / target_ct)) * 100).toFixed(2)) || 0;
+    const curr_utl =
+      elapsedSec > 0
+        ? Number((((act_pd + ng_pd) / ((elapsedSec * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0
+        : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
@@ -226,8 +237,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
 router.get("/machines", async (req, res) => {
   try {
+    const now = moment();
     const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("R"));
+    const filtered = Object.values(machineData).filter((m) => isInRaceMachine(m.mc_no));
+    const dataArray = prepareRealtimeData(filtered, runningTime, now);
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_pd || 0;
