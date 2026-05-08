@@ -20,6 +20,11 @@ const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_
 const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
+const isInBoreMachine = (mc_no) => {
+  const id = (mc_no || "").toUpperCase();
+  return id.startsWith("IR") && id.endsWith("B");
+};
+
 const reloadMasterData = async () => {
   //console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
   try {
@@ -256,7 +261,8 @@ router.get("/machines", async (req, res) => {
   try {
     const now = moment();
     const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime, now).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("B"));
+    const filtered = Object.values(machineData).filter((m) => isInBoreMachine(m.mc_no));
+    const dataArray = prepareRealtimeData(filtered, runningTime, now);
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_pd || 0;
