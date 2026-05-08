@@ -163,7 +163,9 @@ const queryCurrentRunningTime = async () => {
   return result[1] > 0 ? result[0] : [];
 };
 
-const prepareRealtimeData = (currentMachineData, runningTimeData) => {
+const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
+  const { start_time, elapsedMin, elapsedSec } = shiftWindow(now, startTime);
+
   const result = Object.values(currentMachineData).map((item) => {
     let status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
@@ -186,8 +188,6 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const ng_pd = (item.ng_p || 0) + (item.ng_n || 0);
     const act_ct = item.eachct / 100 || 0;
 
-    const now = moment(item.updated_at);
-    const { start_time, elapsedMin, elapsedSec } = shiftWindow(now, startTime);
     const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const diff_pd = act_pd - target_pd;
@@ -254,8 +254,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
 
 router.get("/machines", async (req, res) => {
   try {
+    const now = moment();
     const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("B"));
+    const dataArray = prepareRealtimeData(machineData, runningTime, now).filter((item) => item.mc_no.startsWith("IR") && item.mc_no.endsWith("B"));
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_pd || 0;
