@@ -6,6 +6,7 @@ const moment = require("moment");
 
 const master_mc_no = require("../util/mqtt_master_mc_no");
 const determineMachineStatus = require("../util/determineMachineStatus");
+const shiftWindow = require("../util/shiftWindow");
 
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
@@ -20,7 +21,7 @@ const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
 const reloadMasterData = async () => {
-  console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
+  //console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
   try {
     const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER);
     if (!sqlDataArray) return;
@@ -41,12 +42,12 @@ const reloadMasterData = async () => {
 
     for (const mc_no in machineData) {
       if (!sqlDataMap.has(mc_no)) {
-        console.log(`Machine ${processName.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
+        console.info(`Machine ${processName.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
         delete machineData[mc_no];
       }
     }
 
-    console.log(`Master data reloaded. Total machines ${processName.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
+    console.info(`Master data reloaded. Total machines ${processName.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
   } catch (error) {
     console.error("Failed to reload master ${processName.toUpperCase()} data:", error);
   }
@@ -55,9 +56,9 @@ const reloadMasterData = async () => {
 // MQTT connect
 const client = mqtt.connect(`mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
 client.on("connect", () => {
-  console.log("MQTT Connected");
+  console.info("MQTT Connected");
   client.subscribe("#", (err) => {
-    if (!err) console.log(`Subscribed to all topics (#) for ${processName.toUpperCase()}`);
+    if (!err) console.info(`Subscribed to all topics (#) for ${processName.toUpperCase()}`);
   });
 });
 client.on("message", (topic, message) => {
@@ -186,15 +187,18 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const act_ct = item.eachct / 100 || 0;
 
     const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
-    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const { start_time, elapsedMin, elapsedSec } = shiftWindow(now, startTime);
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const diff_pd = act_pd - target_pd;
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
     const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const curr_utl = Number((((act_pd + ng_pd) / ((now.diff(start_time, "second") * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0;
+    const curr_utl =
+      elapsedSec > 0
+        ? Number((((act_pd + ng_pd) / ((elapsedSec * item.ring_factor) / target_ct)) * 100).toFixed(2)) || 0
+        : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
