@@ -159,7 +159,7 @@ router.post("/data", async (req, res) => {
                       ELSE 'before'
                   END AS [alarm_type]
               FROM [nat_mc_mcshop_tn].[dbo].[DATA_ALARMLIS_TN]
-              WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_'
+              WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_')
           ),
           [with_pairing] AS (
               SELECT *,
