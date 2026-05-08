@@ -171,16 +171,18 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-    let target =
-      item.target_special > 0
-        ? item.target_special
-        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    let target = 0;
+    if (item.target_special > 0) {
+      target = item.target_special;
+    } else if (item.target_ct > 0) {
+      target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    }
     let target_ct = item.target_ct || 0;
     let target_utl = item.target_utl || 0;
 
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const act_pd = item.prod_total || 0;
-    const ng_pd = item.ng_p + item.ng_n || 0;
+    const ng_pd = (item.ng_p || 0) + (item.ng_n || 0);
     const act_ct = item.eachct / 100 || 0;
 
     const now = moment(item.updated_at);
@@ -200,6 +202,21 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
     const performance = Number((((act_pd + ng_pd) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
+
+    //TODO : recheck calculation on field
+    /* 
+      status_alarm,
+      target,
+      target_pd,
+      act_pd,
+      diff_pd,
+      act_ct,
+      diff_ct,
+      curr_yield,
+      target_ct,
+      target_utl,
+      curr_utl,
+    */
 
     return {
       ...item,
