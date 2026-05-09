@@ -219,33 +219,34 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const s_ng_pd = item.ag_front + item.ng_front + item.mixball_front;
     const f_ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
 
-    const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
-    const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
-    
-    const s_yield_calc_total = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) || 0));
-    const f_yield_calc_total = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) || 0));
+    const front_total = item.ok_front + item.ag_front + item.ng_front + item.mixball_front;
+    const rear_total = item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear;
+    const s_curr_yield = front_total > 0 ? Number(((item.ok_front / front_total) * 100).toFixed(2)) : 0;
+    const f_curr_yield = rear_total > 0 ? Number(((item.ok_rear / rear_total) * 100).toFixed(2)) : 0;
 
-    const s_curr_utl =
-      elapsedSec > 0
-        ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
-    const f_curr_utl =
-      elapsedSec > 0
-        ? Number((((f_act_pd + f_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
-    
+    const s_yield_calc_total = front_total > 0 ? Number(item.ok_front / front_total) : 0;
+    const f_yield_calc_total = rear_total > 0 ? Number(item.ok_rear / rear_total) : 0;
+
+    const denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
+    const s_curr_utl = denom_utl > 0 ? Number((((s_act_pd + s_ng_pd) / denom_utl) * 100).toFixed(2)) : 0;
+    const f_curr_utl = denom_utl > 0 ? Number((((f_act_pd + f_ng_pd) / denom_utl) * 100).toFixed(2)) : 0;
+
     const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
+    const effective_time_front = total_time_front - plan_shutdown_front;
 
-    const availability_front = Number(((sum_run_front / (total_time_front - plan_shutdown_front)) * 100).toFixed(2)) || 0;
-    const performance_front = Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const availability_front = effective_time_front > 0 ? Number(((sum_run_front / effective_time_front) * 100).toFixed(2)) : 0;
+    const denom_perf_front = s_target_ct > 0 && effective_time_front > 0 ? effective_time_front / s_target_ct : 0;
+    const performance_front = denom_perf_front > 0 ? Number((((item.ok_front + item.ag_front) / denom_perf_front) * 100).toFixed(2)) : 0;
     const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     const plan_shutdown_rear = runInfoRear.sum_planshutdown_duration || 0;
     const downtime_seconds_rear = total_time_rear - sum_run_rear - plan_shutdown_rear;
+    const effective_time_rear = total_time_rear - plan_shutdown_rear;
 
-    const availability_rear = Number(((sum_run_rear / (total_time_rear - plan_shutdown_rear)) * 100).toFixed(2)) || 0;
-    const performance_rear = Number((((item.ok_rear + item.ag_rear) / ((total_time_rear - plan_shutdown_rear) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const availability_rear = effective_time_rear > 0 ? Number(((sum_run_rear / effective_time_rear) * 100).toFixed(2)) : 0;
+    const denom_perf_rear = s_target_ct > 0 && effective_time_rear > 0 ? effective_time_rear / s_target_ct : 0;
+    const performance_rear = denom_perf_rear > 0 ? Number((((item.ok_rear + item.ag_rear) / denom_perf_rear) * 100).toFixed(2)) : 0;
     const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {

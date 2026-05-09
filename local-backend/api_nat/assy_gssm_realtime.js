@@ -197,22 +197,25 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const f_ng_pd = item.ro1_ng + item.ro2_ng + item.grease_ng;
     const s_ng_pd = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng;
 
-    const f_curr_yield = Number(((item.grease_ok / (item.grease_ok + f_ng_pd)) * 100 || 0).toFixed(2));
-    const s_curr_yield = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) * 100 || 0).toFixed(2));
+    const grease_total = item.grease_ok + f_ng_pd;
+    const shield_total = item.shield_ok + s_ng_pd;
+    const f_curr_yield = grease_total > 0 ? Number(((item.grease_ok / grease_total) * 100).toFixed(2)) : 0;
+    const s_curr_yield = shield_total > 0 ? Number(((item.shield_ok / shield_total) * 100).toFixed(2)) : 0;
 
-    const yield_calc_total = Number(((item.shield_ok / (item.shield_ok + s_ng_pd)) || 0));
+    const yield_calc_total = shield_total > 0 ? Number(item.shield_ok / shield_total) : 0;
 
-    const s_curr_utl =
-      elapsedSec > 0
-        ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
+    const s_total_pd = s_act_pd + s_ng_pd;
+    const s_denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
+    const s_curr_utl = s_denom_utl > 0 ? Number(((s_total_pd / s_denom_utl) * 100).toFixed(2)) : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
+    const effective_time = total_time - plan_shutdown;
 
-    const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance_grease = Number((((item.grease_ok + f_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const performance_shield = Number((((item.shield_ok + s_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const availability = effective_time > 0 ? Number(((sum_run / effective_time) * 100).toFixed(2)) : 0;
+    const denom_perf = s_target_ct > 0 && effective_time > 0 ? effective_time / s_target_ct : 0;
+    const performance_grease = denom_perf > 0 ? Number(((grease_total / denom_perf) * 100).toFixed(2)) : 0;
+    const performance_shield = denom_perf > 0 ? Number(((shield_total / denom_perf) * 100).toFixed(2)) : 0;
 
     const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
     const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
