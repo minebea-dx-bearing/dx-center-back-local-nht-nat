@@ -94,4 +94,4 @@ app.listen(process.env.PORT, () => {
 });
 
 
-//TODO: add CREATE NONCLUSTERED INDEX IX_DATABASE_ALARM_Occurred_Covering ON [Your_Alarm_Table_Name] ([occurred]) INCLUDE ([mc_no], [alarm]);
+//TODO: add CREATE NONCLUSTERED INDEX IX_DATABASE_ALARM_Occurred_Covering ON [Your_Alarm_Table_Name] ([occurred]) INCLUDE ([mc_no], [alarm]); still left at 2gd nht
