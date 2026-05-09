@@ -11,6 +11,8 @@ const shiftWindow = require("../util/shiftWindow");
 // In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
 let machineData = {};
 
+// TODO: need to creat idex on occurred and alarm in DATA_ALARMLIS_GD for better performance
+
 // --- Configurations ---
 const processName = "GD";
 const MQTT_SERVER = "10.128.16.200";
