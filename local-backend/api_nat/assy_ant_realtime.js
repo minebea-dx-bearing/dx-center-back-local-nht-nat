@@ -102,7 +102,7 @@ const queryCurrentRunningTime = async () => {
                     ELSE 'before'
                 END AS [alarm_type]
             FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE 'RUN%' OR [alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')
         ),
         [with_pairing] AS (
             SELECT *,
