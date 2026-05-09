@@ -83,7 +83,7 @@ client.on("message", (topic, message) => {
 const queryCurrentRunningTime = async () => {
   const result = await dbms.query(
     `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
+        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
         DECLARE @end_date DATETIME = GETDATE();
         DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
         DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
@@ -102,7 +102,12 @@ const queryCurrentRunningTime = async () => {
                     ELSE 'before'
                 END AS [alarm_type]
             FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE 'RUN%' OR [alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')
+            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 
+            AND (
+                [alarm] LIKE 'RUN%' 
+                OR [alarm] LIKE 'PLAN STOP%' 
+                OR [alarm] LIKE 'SETUP%'
+            )
         ),
         [with_pairing] AS (
             SELECT *,
@@ -154,7 +159,7 @@ const queryCurrentRunningTime = async () => {
             DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
         FROM [filter_time]
         GROUP BY [mc_no], [alarm_base]
-    `
+    `,
   );
   return result[1] > 0 ? result[0] : [];
 };
@@ -195,11 +200,11 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const prod_ok = item.ok1 + item.ok2 || 0;
     const prod_ng = item.ag + item.ng + item.mix || 0;
-    const cycle_t = (item.cycle) / 100 || 0;
+    const cycle_t = item.cycle / 100 || 0;
 
-    const f_act_pd = item.ok_rear
-    const s_act_pd = item.ok_front
-    
+    const f_act_pd = item.ok_rear;
+    const s_act_pd = item.ok_front;
+
     const s_act_ct = item.cycle_time_front / 100 || 0;
     const f_act_ct = item.cycle_time_rear / 100 || 0;
 
@@ -222,20 +227,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
     const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
 
-    const s_curr_utl =
-      elapsedSec > 0
-        ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
-    const f_curr_utl =
-      elapsedSec > 0
-        ? Number((((f_act_pd + f_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
-    
+    const s_curr_utl = elapsedSec > 0 ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0 : 0;
+    const f_curr_utl = elapsedSec > 0 ? Number((((f_act_pd + f_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0 : 0;
+
     const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
 
     const availability_front = Number(((sum_run_front / (total_time_front - plan_shutdown_front)) * 100).toFixed(2)) || 0;
-    const performance_front = Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const performance_front =
+      Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
     const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     const plan_shutdown_rear = runInfoRear.sum_planshutdown_duration || 0;
@@ -320,7 +320,7 @@ router.get("/machines", async (req, res) => {
         acc.count += 1;
         return acc;
       },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
+      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
     );
 
     const resultSummary = {
