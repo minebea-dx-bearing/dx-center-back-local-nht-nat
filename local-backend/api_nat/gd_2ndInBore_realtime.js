@@ -213,21 +213,6 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const performance = denom_perf > 0 ? Number(((total_pd / denom_perf) * 100).toFixed(2)) : 0;
     const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
-    //TODO : recheck calculation on field
-    /* 
-      status_alarm,
-      target,
-      target_pd,
-      act_pd,
-      diff_pd,
-      act_ct,
-      diff_ct,
-      curr_yield,
-      target_ct,
-      target_utl,
-      curr_utl,
-    */
-
     return {
       ...item,
       mc_no: item.mc_no.toUpperCase(),

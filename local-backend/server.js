@@ -92,3 +92,7 @@ app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime")
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
+
+
+//TODO: remove CAST on occured on queryCurrentRunningTime() if occured type = datetime in database, and remove to_char on queryDailyData() if occured type = datetime in database
+//TODO: add CREATE NONCLUSTERED INDEX IX_DATABASE_ALARM_Occurred_Covering ON [Your_Alarm_Table_Name] ([occurred]) INCLUDE ([mc_no], [alarm]);
