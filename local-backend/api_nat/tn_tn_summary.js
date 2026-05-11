@@ -148,7 +148,7 @@ router.post("/data", async (req, res) => {
           [base_alarm] AS (
               SELECT
                   [mc_no],
-              CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
+                  [occurred],
                   [alarm],
                   CASE
                       WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
@@ -178,11 +178,11 @@ router.post("/data", async (req, res) => {
                   [mc_no],
                   [alarm_base],
               CASE
-                  WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
+                  WHEN [occurred] < @start_date THEN @start_date
                   ELSE [occurred]
               END AS [occurred_start],
               CASE
-                  WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
+                  WHEN [occurred_next] > @end_date THEN @end_date
                   ELSE [occurred_next]
               END AS [occurred_end]
               FROM [with_pairing]
