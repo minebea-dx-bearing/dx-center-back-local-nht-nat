@@ -200,17 +200,16 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const f_curr_yield = Number(((item.ok_grs / (item.ok_grs + f_ng_pd)) * 100 || 0).toFixed(2));
     const s_curr_yield = Number(((item.ok / (item.ok + s_ng_pd)) * 100 || 0).toFixed(2));
 
-    const s_curr_utl =
-      elapsedSec > 0
-        ? Number((((s_act_pd + s_ng_pd) / ((elapsedSec * item.ring_factor) / s_target_ct)) * 100).toFixed(2)) || 0
-        : 0;
+    const denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
+    const s_curr_utl = denom_utl > 0 ? Number((((s_act_pd + s_ng_pd) / denom_utl) * 100).toFixed(2)) || 0 : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance_grease = Number((((item.ok_grs + f_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const performance_shield = Number((((item.ok + s_ng_pd) / ((total_time - plan_shutdown) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const denom_perf = s_target_ct > 0 && total_time - plan_shutdown > 0 ? (total_time - plan_shutdown) / s_target_ct : 0;
+    const performance_grease = denom_perf > 0 ? Number((((item.ok_grs + f_ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
+    const performance_shield = denom_perf > 0 ? Number((((item.ok + s_ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
 
     const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
     const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;

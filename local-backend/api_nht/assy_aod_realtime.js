@@ -192,7 +192,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((prod_ok + prod_ng) / ((total_time - plan_shutdown) / target_ct)) * 100).toFixed(2)) || 0;
+    const denom_perf = target_ct > 0 && total_time - plan_shutdown > 0 ? (total_time - plan_shutdown) / target_ct : 0;
+    const performance = denom_perf > 0 ? Number((((prod_ok + prod_ng) / denom_perf) * 100).toFixed(2)) || 0 : 0;
     const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
     
     return {
