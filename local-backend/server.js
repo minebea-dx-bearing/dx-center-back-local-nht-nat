@@ -94,8 +94,4 @@ app.listen(process.env.PORT, () => {
 });
 
 
-//TODO: recheck problem BLOCKER #1 — .find() only reads one alarm_base row per machine, silently dropping the others
-//TODO: SUGGESTION #7 — eachct / 100 || 0 precedence
-//TODO: PERF — Cache the queryCurrentRunningTime result for 10–30 seconds
-//TODO: Phase C — shared masterCache.js for the 5 GD modules
 //TODO: check analysis page show correct data from fomular
