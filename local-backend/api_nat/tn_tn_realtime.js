@@ -1,9 +1,17 @@
+/**
+ * CANONICAL EXAMPLE — Route Pattern R4: Off-hour shift (05:30) + runOnly mode
+ * See docs/realtime-developer-guide.md §5.4 before copying this file.
+ *
+ * Pattern: shift starts at 05:30 — pass startMinute=30 as the third arg to shiftWindow().
+ *          Running-time uses mode:"runOnly" so sum_planshutdown_duration is absent;
+ *          default plan_shutdown to 0 when computing effective_time.
+ */
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const store = require("./_store_tn");
 
 const startTime = 5;
@@ -81,39 +89,15 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([
-      Promise.resolve(store.getSnapshot()),
-      store.getRunningTime(),
-    ]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.target_pd || 0;
-        acc.total_ok += item.act_pd || 0;
-        acc.total_cycle_t += item.act_ct || 0;
-        acc.total_utl += item.curr_utl || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
-    };
-
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getSnapshot(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
 
 module.exports = {
   router,

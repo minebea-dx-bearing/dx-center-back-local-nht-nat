@@ -1,9 +1,20 @@
+/**
+ * CANONICAL EXAMPLE — Route Pattern R2: Dual spindle
+ * See docs/realtime-developer-guide.md §5.2 before copying this file.
+ *
+ * Pattern: two independent spindles (front/rear), each with its own OEE calc.
+ * Store:   _store_ant.js (Family B singleton) — uses master_mc_no_front_rear and
+ *          withPlanStopAnt mode, which adds alarm_base to running-time rows.
+ *
+ * Naming quirk: f_ prefix = Rear spindle, s_ prefix = Front spindle.
+ * This is inherited from the original hardware naming; do not "fix" it.
+ */
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const store = require("./_store_ant");
 
 const startTime = 6;
@@ -11,7 +22,7 @@ const startTime = 6;
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
-  // f_ -> Rear, s_ -> Front
+  // f_ -> Rear spindle, s_ -> Front spindle (hardware naming — intentional)
   return Object.values(currentMachineData).map((item) => {
     const s_status_alarm = determineMachineStatus(item, item.alarm_front, item.occurred_front);
     const f_status_alarm = determineMachineStatus(item, item.alarm_rear, item.occurred_rear);
@@ -132,35 +143,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.f_target_pd || 0;
-        acc.total_ok += item.s_act_pd || 0;
-        acc.total_cycle_t += item.s_act_ct || 0;
-        acc.total_utl += item.s_curr_utl || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "fSpindle",
+  }),
+);
 
 module.exports = {
   router,

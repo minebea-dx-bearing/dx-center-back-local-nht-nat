@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { getStore } = require("./_store_assy");
 
 const startTime = 6;
@@ -80,7 +80,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_target_pd,
       s_target_pd: f_target_pd,
       f_act_pd: item.grease_ok,
-      S_act_pd: item.shield_ok,
+      S_act_pd: item.shield_ok, //? why 'S' Charecter is UpperCASE? --- IGNORE ---
       s_target_yield,
       f_diff_pd,
       s_diff_pd,
@@ -98,35 +98,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.f_target_pd || 0;
-        acc.total_ok += item.s_act_pd || 0;
-        acc.total_cycle_t += item.s_act_ct || 0;
-        acc.total_utl += item.s_curr_utl || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "fSpindle",
+  }),
+);
 
 module.exports = {
   router,

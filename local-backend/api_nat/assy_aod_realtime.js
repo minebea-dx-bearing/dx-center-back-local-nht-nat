@@ -1,3 +1,14 @@
+/**
+ * CANONICAL EXAMPLE — Route Pattern R5: Manual handler (escape hatch)
+ * See docs/realtime-developer-guide.md §5.5 before copying this file.
+ *
+ * Escapes makeMachinesHandler because the summary needs avg_opn (average across
+ * machines), not the standard sum_target/sum_daily_ok/avg_cycle_t/avg_utl shape.
+ *
+ * Still uses: _store_assy (no duplicate MQTT/SQL), shiftWindow(), determineMachineStatus().
+ * Do NOT copy the manual router.get pattern unless makeMachinesHandler truly cannot
+ * produce your summary — adding a new summary type to SUMMARY_FIELDS is preferred.
+ */
 const express = require("express");
 const router = express.Router();
 const moment = require("moment");

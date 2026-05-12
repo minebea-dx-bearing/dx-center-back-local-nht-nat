@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const store = require("./_store_2gd");
 
 const isOutSuperMachine = (mc_no) => {
@@ -85,38 +85,15 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([
-      Promise.resolve(store.getSnapshot(isOutSuperMachine)),
-      store.getRunningTimeRunOnly(),
-    ]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.target_pd || 0;
-        acc.total_ok += item.act_pd || 0;
-        acc.total_cycle_t += item.act_ct || 0;
-        acc.total_utl += item.curr_utl || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getSnapshot(isOutSuperMachine),
+    getRunningTime: store.getRunningTimeRunOnly,
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
 
 module.exports = {
   router,

@@ -27,7 +27,7 @@ const createProcessStore = ({
   startHour,
   hub,
   masterLoader, // async () => Array<row>
-  runningTimeLoader, // async () => Array<row>
+  runningTimeLoader, // async () => Array<row> — NOT used by any current store; all stores create createRunningTimeCache externally for key/startMinute flexibility
   ttlMs = DEFAULT_TTL_MS,
   reloadIntervalMs = DEFAULT_RELOAD_MS,
 }) => {

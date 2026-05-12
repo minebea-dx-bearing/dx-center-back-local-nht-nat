@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { getStore } = require("./_store_assy");
 
 const startTime = 6;
@@ -74,17 +74,14 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    res.json({ success: true, data: dataArray });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+  }),
+);
 
 module.exports = {
   router,
