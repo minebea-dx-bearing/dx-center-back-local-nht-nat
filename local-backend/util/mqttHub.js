@@ -66,7 +66,7 @@ const createHub = (brokerUrl) => {
     for (const h of handlers) {  // * fan-out to all matching handlers in registration order, so more specific handlers can run before more general ones if needed
       if (h.accepts(mc_no)) { 
         try {
-          h.onMessage(mc_no, payload, topic);
+          h.onMessage(mc_no, payload, topic); // * handler is responsible for its own error handling, so one bad handler doesn't break the others
         } catch (err) {
           console.error(`[mqttHub] handler error for mc_no ${mc_no}:`, err.message);
         }
