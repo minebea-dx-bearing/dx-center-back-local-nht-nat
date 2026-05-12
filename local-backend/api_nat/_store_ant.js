@@ -7,11 +7,6 @@
  *
  * Connects to the ASSY broker (NAT_MQTT_ASSY), not the MC_SHOP broker.
  * Uses the `_new` database suffix (nat_mc_assy_ant_new).
- *
- * NOTE: the original SQL declared [sum_duration] twice in the SELECT clause
- * (a plain SUM and a conditional). Preserved verbatim to keep response
- * identical to current production behavior — the conditional alias is what
- * the JS layer actually consumes.
  */
 
 const moment = require("moment");
@@ -76,7 +71,6 @@ const sqlRunningTime = () => `
   SELECT
     [mc_no],
     [alarm_base],
-    SUM([duration_seconds]) AS [sum_duration],
     CASE WHEN [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
     CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planshutdown_duration],
     DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]

@@ -40,17 +40,29 @@ const createHub = (brokerUrl) => {
     try {
       payload = JSON.parse(message.toString());
     } catch (err) {
-      console.error(`[mqttHub] JSON parse error on topic ${topic}:`, err.message);
-      return;
-    }
-    for (const h of handlers) {
-      if (h.accepts(mc_no)) {
-        try {
-          h.onMessage(mc_no, payload, topic);
-        } catch (err) {
-          console.error(`[mqttHub] handler error for mc_no ${mc_no}:`, err.message);
-        }
-      }
+    //   const m = err.message.match(/position (\d+)/);
+    //   const pos = m ? Number(m[1]) : -1;
+    //   const raw = message.toString();
+    //   const slice = pos >= 0 ? raw.slice(Math.max(0, pos - 30), pos + 30) : "";
+    //   const hex = slice
+    //     ? Buffer.from(slice, "utf8").toString("hex").match(/.{1,2}/g).join(" ")
+    //     : "";
+    //   console.error(
+    //     `[mqttHub] JSON parse error on topic ${topic}: ${err.message}\n` +
+    //       `  context: ${JSON.stringify(slice)}\n` +
+    //       `  hex:     ${hex}`
+    //   );
+    //   return;
+    // }
+    // for (const h of handlers) {
+    //   if (h.accepts(mc_no)) {
+    //     try {
+    //       h.onMessage(mc_no, payload, topic);
+    //     } catch (err) {
+    //       console.error(`[mqttHub] handler error for mc_no ${mc_no}:`, err.message);
+    //     }
+    //   }
+      console.error(`[mqttHub] handler error for mc_no ${mc_no}:`, err.message);
     }
   });
 
