@@ -69,5 +69,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
   }
 };
 
+// Response จากฟังก์ชันนี้จะเป็น Array ของ object เช่น:
+// [{ ...ProductionColumns, alarm, occurred, part_no, target_ct, target_utl, target_yield, target_special, ring_factor }]
 // Export ฟังก์ชันนี้ออกไปเพื่อให้ไฟล์อื่นเรียกใช้ได้
 module.exports = master_mc_no;

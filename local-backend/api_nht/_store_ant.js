@@ -29,8 +29,8 @@ const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT
 const store = createProcessStore({
   processName,
   startHour,
-  hub,
-  masterLoader: () => master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+  hub, //machine data from mqtt subscription
+  masterLoader: () => master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER), //data from Table(SQL)
 });
 
 const runningTimeCache = createRunningTimeCache({
@@ -44,7 +44,8 @@ const runningTimeCache = createRunningTimeCache({
 });
 
 module.exports = {
-  getSnapshot: store.getSnapshot,
-  getRawMap: store.getRawMap,
-  getRunningTime: () => runningTimeCache.get(),
+  //need to expose getSnapshot and getRunningTime for realtime route to use(need filter mc_no or not need )
+  getSnapshot: store.getSnapshot,//have filter function in getSnapshot to filter machine that not exist in master (e.g. machine removed from production but still have mqtt data come in for a while until MQTT timeout)
+  getRawMap: store.getRawMap,//no filter, return all machine in master and live (including machine that removed from production but still have mqtt data come in for a while until MQTT timeout)
+  getRunningTime: () => runningTimeCache.get(),//get running time data from cache, which will call loader function to get data from Table(SQL) when cache miss or expired
 };

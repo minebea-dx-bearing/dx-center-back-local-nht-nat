@@ -22,14 +22,14 @@ const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DAT
 
 const hub = getHub(`mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
 
-const store = createProcessStore({
+const store = createProcessStore({ 
   processName,
   startHour,
   hub,
   masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
 });
 
-const runningTimeCache = createRunningTimeCache({
+const runningTimeCache = createRunningTimeCache({ // * cache running time for 20 seconds to avoid hitting DB on every API request, since the running time doesn't need to be super real-time
   ttlMs: 20_000,
   keyFn: () => `${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
@@ -41,6 +41,6 @@ const runningTimeCache = createRunningTimeCache({
 
 module.exports = {
   getSnapshot: store.getSnapshot,
-  getRawMap: store.getRawMap,
-  getRunningTime: () => runningTimeCache.get(),
+  getRawMap: store.getRawMap, ////"What is each machine doing right now?" (detailed data)
+  getRunningTime: () => runningTimeCache.get(), //How long has the line been running this shift?
 };

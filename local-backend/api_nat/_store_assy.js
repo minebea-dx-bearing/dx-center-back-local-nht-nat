@@ -35,8 +35,8 @@ const buildStore = (processName) => {
   const store = createProcessStore({
     processName,
     startHour,
-    hub,
-    masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+    hub,// * for subscribe mqtt topic 
+    masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER), //* for get array machine data from Table(SQL)
   });
 
   const runningTimeCache = createRunningTimeCache({

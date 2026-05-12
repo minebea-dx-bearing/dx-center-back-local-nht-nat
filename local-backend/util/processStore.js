@@ -5,7 +5,7 @@
  *   - `mqtt.connect(...)` + subscribe("#") + message handler
  *   - `queryCurrentRunningTime()` re-running on every API request
  *
- * One store instance owns master data, live data, and the running-time cache
+ * One store instance owns master data and live data
  * for one process family (e.g. all five 2GD route files share `_store_2gd.js`).
  *
  * Field ownership is enforced by storage separation (not by allowlist):
@@ -17,41 +17,37 @@
  */
 
 const moment = require("moment");
-const { createRunningTimeCache, shiftStartDate } = require("./runningTimeCache");
 
-const DEFAULT_RELOAD_MS = 5 * 60 * 1000;
-const DEFAULT_TTL_MS = 20 * 1000;
+const DEFAULT_RELOAD_MS = 5 * 60 * 1000; //#handle master data reload every 5 minutes by default, can be overridden by passing reloadIntervalMs to createProcessStore()
 
 const createProcessStore = ({
   processName,
   startHour,
   hub,
   masterLoader, // async () => Array<row>
-  runningTimeLoader, // async () => Array<row> — NOT used by any current store; all stores create createRunningTimeCache externally for key/startMinute flexibility
-  ttlMs = DEFAULT_TTL_MS,
   reloadIntervalMs = DEFAULT_RELOAD_MS,
 }) => {
-  const master = {}; // mc_no -> whole SQL row
-  const live = {}; // mc_no -> accumulated MQTT fields
+  const master = {}; // mc_no list -> whole SQL row
+  const live = {}; // mc_no list -> accumulated MQTT fields
 
   const reloadMaster = async () => {
     try {
-      const rows = await masterLoader();
+      const rows = await masterLoader(); // * execute SQL query and get array of machine data
       if (!rows) return;
 
       const seen = new Set();
-      for (const row of rows) {
+      for (const row of rows) { 
         master[row.mc_no] = row;
-        seen.add(row.mc_no);
+        seen.add(row.mc_no); // * track which machines are present in the new SQL result, so we can remove machines that are removed from production */
       }
 
-      for (const mc_no of Object.keys(master)) {
+      for (const mc_no of Object.keys(master)) { // * remove machine that exist in master but not exist in new SQL result (e.g. machine removed from production)
         if (!seen.has(mc_no)) {
           console.info(`[${processName}] machine removed from SQL: ${mc_no}`);
           delete master[mc_no];
           delete live[mc_no];
         }
-      }
+      } //Without it, removed machines would stay in memory forever
 
       console.info(`[${processName}] master reloaded — ${Object.keys(master).length} machines`);
     } catch (err) {
@@ -59,7 +55,7 @@ const createProcessStore = ({
     }
   };
 
-  hub.register({
+  hub.register({ //subscribe MQTT topic and update live data on message
     accepts: (mc_no) => Object.prototype.hasOwnProperty.call(master, mc_no),
     onMessage: (mc_no, payload) => {
       live[mc_no] = {
@@ -71,13 +67,7 @@ const createProcessStore = ({
     },
   });
 
-  const runningTimeCache = createRunningTimeCache({
-    ttlMs,
-    keyFn: () => `${processName}-${shiftStartDate(moment(), startHour)}`,
-    loader: runningTimeLoader,
-  });
-
-  const mergeOne = (mc_no) => {
+  const mergeOne = (mc_no) => { // * merge master data and live data for one machine, live data take precedence over master data when field overlap (e.g. updated_at, source)
     const m = master[mc_no];
     if (!m) return null;
     const l = live[mc_no] || {};
@@ -89,7 +79,7 @@ const createProcessStore = ({
     };
   };
 
-  const getSnapshot = (filterFn) => {
+  const getSnapshot = (filterFn) => {// * get array of merged data for all machines, optionally filtered by filterFn(mc_no) */
     const out = [];
     for (const mc_no of Object.keys(master)) {
       if (filterFn && !filterFn(mc_no)) continue;
@@ -99,7 +89,7 @@ const createProcessStore = ({
     return out;
   };
 
-  const getRawMap = () => {
+  const getRawMap = () => {// * get map of merged data for all machines, keyed by mc_no (for API routes that need to look up machines individually) */
     const out = {};
     for (const mc_no of Object.keys(master)) {
       const merged = mergeOne(mc_no);
@@ -108,14 +98,13 @@ const createProcessStore = ({
     return out;
   };
 
-  reloadMaster();
-  setInterval(reloadMaster, reloadIntervalMs);
+  reloadMaster();// * initial load, then schedule reload every reloadIntervalMs (default 5 minutes) */
+  setInterval(reloadMaster, reloadIntervalMs); // * schedule master data reload every reloadIntervalMs (default 5 minutes)
 
   return {
     getSnapshot,
     getRawMap,
-    getRunningTime: () => runningTimeCache.get(),
-    _debug: { master, live, runningTimeCache },
+    _debug: { master, live },
   };
 };
 
