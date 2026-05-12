@@ -4,14 +4,9 @@
  * Dual-spindle: uses `master_mc_no_front_rear` and groups by alarm_base
  * ("RUN FRONT" / "RUN REAR" / "PLAN STOP" / "SETUP").
  *
- * Broker: hardcoded `mqtt://10.128.16.120:1883` (per user direction —
- * preserved from current production code; not driven by NHT_MQTT_ASSY).
+ * Broker: process.env.NHT_MQTT_ASSY_FRONT.
  *
  * DB stem `data_machine_an2`; table suffix uses dbProcess = "AN".
- *
- * NOTE: SELECT clause declares `[sum_duration]` twice (a plain SUM + a
- * conditional). Preserved verbatim to match current production output —
- * the conditional alias is what JS reads, the plain one is overwritten.
  */
 
 const moment = require("moment");
@@ -28,7 +23,7 @@ const DATABASE_PROD = `[data_machine_an2].[dbo].[DATA_PRODUCTION_${dbProcess}]`;
 const DATABASE_ALARM = `[data_machine_an2].[dbo].[DATA_ALARMLIS_${dbProcess}]`;
 const DATABASE_MASTER = `[data_machine_an2].[dbo].[DATA_MASTER_${dbProcess}]`;
 
-const hub = getHub("mqtt://10.128.16.120:1883");
+const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT_PORT}`);
 
 const store = createProcessStore({
   processName,
@@ -77,7 +72,6 @@ const sqlRunningTime = () => `
   SELECT
     [mc_no],
     [alarm_base],
-    SUM([duration_seconds]) AS [sum_duration],
     CASE WHEN [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
     CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planshutdown_duration],
     DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]

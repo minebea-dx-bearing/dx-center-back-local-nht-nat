@@ -4,7 +4,7 @@
  * All 6 share:
  *   - startHour 6
  *   - DB stem `data_machine_<processName.toLowerCase()>`
- *   - broker `process.env.NHT_MQTT_ASSY`
+ *   - broker `process.env.NHT_MQTT_ASSY_FRONT`
  *   - master util `master_mc_no`
  *   - standard withPlanStop SQL
  *
@@ -41,7 +41,7 @@ const buildStore = (processName, opts = {}) => {
   const DATABASE_ALARM = `[${dbStem}].[dbo].[${alarmTableSuffix}_${uc}]`;
   const DATABASE_MASTER = `[${dbStem}].[dbo].[DATA_MASTER_${uc}]`;
 
-  const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
+  const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT_PORT}`);
 
   const store = createProcessStore({
     processName,

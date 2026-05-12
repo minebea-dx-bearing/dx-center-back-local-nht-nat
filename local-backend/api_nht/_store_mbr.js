@@ -4,7 +4,7 @@
  * dbProcess "ASSY" (single-spindle MBR uses tables named DATA_*_ASSY in DB
  * `data_machine_assy1`). Standard withPlanStop SQL.
  *
- * Broker: process.env.NHT_MQTT_ASSY. Behavior change vs. pre-refactor —
+ * Broker: process.env.NHT_MQTT_ASSY_FRONT. Behavior change vs. pre-refactor —
  * the old route hardcoded mqtt://10.128.16.120:1883 because its local
  * `const process = "ASSY"` shadowed Node's global, preventing env access.
  * Per user direction, the migrated version uses the env-driven hub.
@@ -24,7 +24,7 @@ const DATABASE_PROD = `[data_machine_assy1].[dbo].[DATA_PRODUCTION_${dbProcess}]
 const DATABASE_ALARM = `[data_machine_assy1].[dbo].[DATA_ALARMLIS_${dbProcess}]`;
 const DATABASE_MASTER = `[data_machine_assy1].[dbo].[DATA_MASTER_${dbProcess}]`;
 
-const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
+const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT_PORT}`);
 
 const store = createProcessStore({
   processName,
