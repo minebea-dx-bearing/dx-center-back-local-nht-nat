@@ -20,23 +20,23 @@
  */
 
 const createRunningTimeCache = ({ ttlMs, keyFn, loader }) => {
-  let state = { key: null, at: 0, data: null, inflight: null };
+  let state = { key: null, at: 0, data: null, inflight: null }; // * state holds the current cache key, timestamp of when it was loaded, the cached data, and any in-flight Promise for a load that's currently happening
 
   const get = () => {
     const key = keyFn();
     const now = Date.now();
-    const fresh = state.key === key && now - state.at < ttlMs && state.data !== null;
+    const fresh = state.key === key && now - state.at < ttlMs && state.data !== null; // * cache hit only when key matches, data is not null, and within TTL
     if (fresh) return Promise.resolve(state.data);
-    if (state.inflight && state.key === key) return state.inflight;
+    if (state.inflight && state.key === key) return state.inflight; // * if there's already an in-flight load for the same key, return that Promise instead of calling loader again
 
-    const inflight = (async () => {
+    const inflight = (async () => { // * call the loader to get fresh data, and update the cache state when it resolves
       const data = await loader();
       state = { key, at: Date.now(), data, inflight: null };
       return data;
     })();
 
-    state = { ...state, key, inflight };
-    inflight.catch(() => {
+    state = { ...state, key, inflight }; // * update the state with the new key and in-flight Promise, but keep the old data until the new load resolves
+    inflight.catch(() => { // * if the loader fails, clear the in-flight state so that the next call will retry
       if (state.inflight === inflight) state.inflight = null;
     });
 
@@ -45,7 +45,7 @@ const createRunningTimeCache = ({ ttlMs, keyFn, loader }) => {
 
   return {
     get,
-    _peek: () => ({ key: state.key, at: state.at, hasData: state.data !== null }),
+    _peek: () => ({ key: state.key, at: state.at, hasData: state.data !== null }), // * for testing: check the current cache key, timestamp, and whether it has data without triggering a load
   };
 };
 
