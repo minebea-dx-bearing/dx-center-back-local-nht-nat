@@ -52,8 +52,19 @@ const config = {
 
   console.log("\n[getStatusTimeline — uses parameterized replacements]");
   assertEq("mc_no replacement present", capturedOpts.replacements.mc_no, "MC01");
-  assertEq("startDate starts with date", capturedOpts.replacements.startDate.startsWith("2026-05-13"), true);
-  assertEq("targetEndDate is next day", capturedOpts.replacements.targetEndDate.startsWith("2026-05-14"), true);
+  assertEq("startDate equals 07:00", capturedOpts.replacements.startDate, "2026-05-13 07:00");
+  assertEq("targetEndDate equals next day 07:00", capturedOpts.replacements.targetEndDate, "2026-05-14 07:00");
+
+  console.log("\n[getStatusTimeline — respects custom startHour/startMinute]");
+  capturedSql = null;
+  capturedOpts = null;
+  await getStatusTimeline(mockDbms, "MC01", "2026-05-13", {
+    ...config,
+    startHour: 6,
+    startMinute: 30,
+  });
+  assertEq("custom startDate equals 06:30", capturedOpts.replacements.startDate, "2026-05-13 06:30");
+  assertEq("custom targetEndDate equals next day 06:30", capturedOpts.replacements.targetEndDate, "2026-05-14 06:30");
 
   console.log("\n=========================================================");
   console.log(` Result: ${passed} passed, ${failed} failed`);

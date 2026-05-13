@@ -2,10 +2,14 @@
 const moment = require("moment-timezone");
 
 const getStatusTimeline = async (dbms, mc_no, date, config) => {
-  const { databaseAlarm, databaseIot } = config;
-  const dateTomarrow = moment(date).add(1, "day").format("YYYY-MM-DD");
-  const startDate = `${date} 07:00`;
-  const targetEndDate = `${dateTomarrow} 07:00`;
+    const { databaseAlarm, databaseIot, startHour = 7, startMinute = 0 } = config;
+    const startDate = moment(date)
+        .hour(startHour)
+        .minute(startMinute)
+        .second(0)
+        .millisecond(0)
+        .format("YYYY-MM-DD HH:mm");
+    const targetEndDate = moment(startDate).add(1, "day").format("YYYY-MM-DD HH:mm");
 
   const [result] = await dbms.query(
     `
