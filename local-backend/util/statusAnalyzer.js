@@ -16,10 +16,11 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
     THEN GETDATE()
     ELSE @TargetEndDate
     END;
-    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
-    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date); -- เวลาที่ต้องการลบไป 2hr เพื่อดึง alarm ตัวก่อนหน้า --
+    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date); -- เวลาที่ต้องการบวกไป 2hr เพื่อดึง alarm ตัวหลัง --
 
     WITH [base_alarm] AS (
+        -- เรียก data ทั้งหมด ก่อนและหลัง 1hr --
         SELECT
             [mc_no],
             [occurred],
@@ -36,12 +37,14 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
     ),
     [with_pairing] AS (
+        -- จับคู่ alarm กับ alarm_ --
         SELECT *,
             ISNULL(LEAD([occurred]) OVER (PARTITION BY [mc_no], [status_alarm] ORDER BY [occurred]), @end_date) AS [occurred_next],
             ISNULL(LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [status_alarm] ORDER BY [occurred]), 'after') AS [next_type]
         FROM [base_alarm]
     ),
     [paired_alarms] AS (
+        -- filter เฉพาะตัวที่มี alarm , alarm_ และ check ตัว alarm ที่เกิดซ้อนอยู่ใน alarm อีกตัว --
         SELECT
             [mc_no],
             [status_alarm],
@@ -80,6 +83,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         FROM [mark]
     ),
     [grpz] AS (
+        -- เก็บเฉพาะแถวที่ broker = 0 แล้วทำ running group id สำหรับช่วงต่อเนื่อง
         SELECT
             *,
             SUM(CASE WHEN [start_flag] = 1 THEN 1 ELSE 0 END)
@@ -123,6 +127,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         FROM [with_max_prev]
     ),
     [clamped_alarms] AS (
+        -- ตัดตัวที่เป็น alarm ซ้อนใน alarm อีกตัวออกและเพิ่มเวลาก่อนและหลังเพื่อคำนวณ --
         SELECT
             [mc_no],
             [status_alarm],
@@ -138,6 +143,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         WHERE [duplicate] = 0
     ),
     [edit_occurred] AS (
+        -- filter เอาเฉพาะเวลาที่ต้องการ , ถ้า alarm = mc_run แล้วเวลาซ้อนกับ alarm ตัวอื่นจะตัดเวลา alarm ตัวนั้นออก , ถ้าเป็น alarm1 เหลื่อม alarm2 จะตัดเวลา alarm1 ออกตามที่เหลื่อม --
         SELECT
             *,
             CASE
@@ -148,6 +154,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         FROM [clamped_alarms]
     ),
     [insert_stop] AS (
+        -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
         SELECT
             [mc_no],
             'STOP' AS [status_alarm],
@@ -157,6 +164,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         WHERE [next_gap_seconds] > 0
     ),
     [insert_stop_end] AS (
+        -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
         SELECT
             [mc_no],
             'STOP' AS [status_alarm],
@@ -166,6 +174,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         WHERE [next_gap_seconds] IS NULL
     ),
     [insert_stop_start] AS (
+        -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
         SELECT
             [mc_no],
             'STOP' AS [status_alarm],
@@ -175,6 +184,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         WHERE [previous_gap_seconds] IS NULL
     ),
     [combine_result] AS (
+        -- รวม alarm ทั้งหมดกับ STOP เข้าด้วยกัน --
         SELECT UPPER([mc_no]) AS [mc_no], UPPER([status_alarm]) AS [status_alarm], [new_occurred_start] AS [occurred_start], [occurred_end] FROM [edit_occurred]
         UNION ALL
         SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop]
@@ -184,6 +194,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_start]
     ),
     [edit_time_result] AS (
+        -- ปัดเวลาให้เท่ากับเวลาที่ต้องการ --
         SELECT
             [mc_no],
             [status_alarm],
@@ -198,6 +209,7 @@ const getStatusTimeline = async (dbms, mc_no, date, config) => {
         FROM [combine_result]
     ),
     [filter_result] AS (
+        -- หลังปัดเวลาเสร็จ filter เอาข้อมูลที่เวลาผิดทิ้ง --
         SELECT * FROM [edit_time_result]
         WHERE [occurred_end] > [occurred_start]
     )

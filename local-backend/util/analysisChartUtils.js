@@ -65,6 +65,9 @@ const generateData = (raw) => {
   });
 };
 
+// ========================================
+// Summary ตาม status_alarm (ใช้ data[0] ที่มี color แล้ว)
+// ========================================
 const summarize = (data) =>
   Object.values(
     data.reduce((acc, { status_alarm, duration_seconds, color }) => {
