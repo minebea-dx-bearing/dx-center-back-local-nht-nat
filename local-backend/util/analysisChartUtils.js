@@ -36,7 +36,13 @@ const calcTargetProd = (timeSeconds, row) => {
   if (row.target_special && row.target_special !== "") {
     return Number((row.target_special / 86400) * timeSeconds);
   }
-  return (timeSeconds / row.target_ct) * (row.target_utl / 100) * (row.target_yield / 100) * row.ring_factor;
+  if (!row.target_ct || row.target_ct === 0) return 0;
+  return (
+    (timeSeconds / row.target_ct) *
+    (row.target_utl / 100) *
+    (row.target_yield / 100) *
+    row.ring_factor
+  );
 };
 
 const generateData = (raw) => {
