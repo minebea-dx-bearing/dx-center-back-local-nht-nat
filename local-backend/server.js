@@ -95,3 +95,6 @@ app.listen(process.env.PORT, () => {
 
 
 //TODO: check analysis page show correct data from fomular
+//TODO: refactor prepareData to recive start time of line from store
+//TODO: change utils fomular on analysis file
+//TODO: change time parameter on getStatusTimeline to relate line time like tn = 5:30, asssy = 6.00, gd = 7:00

@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const dbms = require("../instance/ms_instance_nht");
 const moment = require("moment-timezone");
+const { getStatusTimeline } = require("../util/statusAnalyzer");
+const { generateData, summarize, calcTargetProd } = require("../util/analysisChartUtils");
 
 const DATABASE_PROD = "[data_machine_fim].[dbo].[DATA_PRODUCTION_FIM]";
 const DATABASE_ALARM = "[data_machine_fim].[dbo].[DATA_ALARMLIS_FIM]";
@@ -12,13 +14,6 @@ const COLUMN_OK = "[ok]";
 const COLUMN_NG = "[ap_ng]+[ir_ng]+[or_ng]+[width_ng]+[chamfer_ng]+[shield_curl_ng]+[mix_ng]+[rotation_ng]";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
 const COLUMN_CT = "[cycletime]";
-
-const calcTargetProd = (timeSeconds, row) => {
-  if (row.target_special && row.target_special !== "") {
-    return Number((row.target_special / 86400) * timeSeconds);
-  }
-  return (timeSeconds / row.target_ct) * (row.target_utl / 100) * (row.target_yield / 100) * row.ring_factor;
-};
 
 const calculateShifts = (data, date) => {
   let M = null;

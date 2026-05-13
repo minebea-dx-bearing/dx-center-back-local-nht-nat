@@ -55,9 +55,14 @@ const createRunningTimeCache = ({ ttlMs, keyFn, loader }) => {
  * yesterday's date; otherwise today's. Used to key the cache so that at the
  * shift rollover, the stale-day entry is bypassed even within TTL.
  */
-const shiftStartDate = (now, startHour) => {
+const shiftStartDate = (now, startHour, startMinute = 0) => {
   const m = now.clone();
-  if (m.hour() < startHour) m.subtract(1, "day");
+  if (
+    m.hour() < startHour ||
+    (m.hour() === startHour && m.minute() < startMinute) //
+  ) {
+    m.subtract(1, "day");
+  }
   return m.format("YYYY-MM-DD");
 };
 
