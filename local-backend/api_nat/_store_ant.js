@@ -34,7 +34,7 @@ const store = createProcessStore({
 
 const runningTimeCache = createRunningTimeCache({
   ttlMs: 20_000,
-  keyFn: () => `${processName}-${shiftStartDate(moment(), startHour)}`,
+  keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
     const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStopAnt" });
     const result = await dbms.query(sql);

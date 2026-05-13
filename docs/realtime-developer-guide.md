@@ -258,6 +258,41 @@ If you see these patterns elsewhere in the codebase, treat them as the **excepti
 
 ---
 
+### 4.7 keyFn convention — what to write when creating a new store
+
+`keyFn` is the cache-bust signal inside `createRunningTimeCache`. It is **not** a globally shared registry — each cache instance is an isolated closure, so key collisions between stores are structurally impossible. The only job of `keyFn` is: return the same string throughout a shift, and a different string after the shift rolls over.
+
+**Convention — always prefix with your plant name:**
+
+```js
+// NAT
+keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
+// → "NAT-ALU-2025-05-12"
+
+// NHT
+keyFn: () => `NHT-${processName}-${shiftStartDate(moment(), startHour)}`,
+// → "NHT-GD-2025-05-12"
+
+// Family E: one store, multiple caches — append a short mode tag so debug logs are distinct
+// NAT-2GD helper: const shiftDateKey = () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`;
+keyFn: () => `${shiftDateKey()}-withPS`,   // → "NAT-2GD-2025-05-12-withPS"
+keyFn: () => `${shiftDateKey()}-runOnly`,  // → "NAT-2GD-2025-05-12-runOnly"
+```
+
+**Known edge case — Family D (startMinute ≠ 0):** `shiftStartDate` only accepts `startHour`. For TN's 05:30 shift, the cache key rolls at 05:00 — 30 minutes before the actual SQL anchor. During that 30-minute window, the SQL `@start_date` is still in the future so `sum_duration` returns 0 regardless. The imprecision is benign and matches current TN behaviour. If a future process has a large `startMinute` and the gap matters, write a custom keyFn:
+
+```js
+// Precise HH:MM rollover — only needed when the startMinute gap would show on the dashboard
+keyFn: () => {
+  const now = moment();
+  const todayAnchor = moment().startOf("day").hour(startHour).minute(startMinute);
+  const anchor = now.isBefore(todayAnchor) ? moment(todayAnchor).subtract(1, "day") : todayAnchor;
+  return `NAT-${processName}-${anchor.format("YYYY-MM-DD-HHmm")}`  // or NHT-;
+},
+```
+
+---
+
 ## 5. Step 2 — Pick the Realtime Route Pattern
 
 Every realtime file follows this structure:

@@ -42,7 +42,7 @@ const store = createProcessStore({
   masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
 });
 
-const shiftDateKey = () => `${processName}-${shiftStartDate(moment(), startHour)}`;
+const shiftDateKey = () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`;
 
 const makeLoader = (mode) => async () => {
   const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode });

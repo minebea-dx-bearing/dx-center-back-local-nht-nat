@@ -24,7 +24,7 @@ const DATABASE_PROD = `[data_machine_an2].[dbo].[DATA_PRODUCTION_${dbProcess}]`;
 const DATABASE_ALARM = `[data_machine_an2].[dbo].[DATA_ALARMLIS_${dbProcess}]`;
 const DATABASE_MASTER = `[data_machine_an2].[dbo].[DATA_MASTER_${dbProcess}]`;
 
-const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT_PORT}`);
+const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_BACK}:${process.env.MQTT_PORT}`);
 
 const store = createProcessStore({
   processName,

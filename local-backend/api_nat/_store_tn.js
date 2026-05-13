@@ -31,7 +31,7 @@ const store = createProcessStore({
 
 const runningTimeCache = createRunningTimeCache({ // * cache running time for 20 seconds to avoid hitting DB on every API request, since the running time doesn't need to be super real-time
   ttlMs: 20_000,
-  keyFn: () => `${processName}-${shiftStartDate(moment(), startHour)}`,
+  keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
     const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, startMinute, mode: "runOnly" });
     const result = await dbms.query(sql);
