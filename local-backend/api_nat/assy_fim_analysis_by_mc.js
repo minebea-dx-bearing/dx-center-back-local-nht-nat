@@ -188,10 +188,13 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               END AS yield,
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
-          WHERE mc_no = '${mc_no}'
-          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          WHERE mc_no = :mc_no
+          AND FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = :date
           ORDER BY registered ASC
-      `
+      `,
+      {
+        replacements: { mc_no, date },
+      }
     );
 
     if (data[0].length > 0) {
@@ -266,11 +269,13 @@ router.get("/status/:mc_no/:date", async (req, res) => {
   try {
     let { mc_no, date } = req.params;
     let dateTomarrow = moment(date).add(1, "day").endOf("day").format("YYYY-MM-DD");
+    const startDate = `${date} 07:00`;
+    const targetEndDate = `${dateTomarrow} 07:00`;
 
     let data = await dbms.query(
       `
-          DECLARE @start_date DATETIME = '${date} 07:00';
-          DECLARE @TargetEndDate DATETIME = '${dateTomarrow} 07:00';
+          DECLARE @start_date DATETIME = :startDate;
+          DECLARE @TargetEndDate DATETIME = :targetEndDate;
           DECLARE @end_date DATETIME = CASE
           WHEN @TargetEndDate > GETDATE()
           THEN GETDATE()
@@ -478,9 +483,12 @@ router.get("/status/:mc_no/:date", async (req, res) => {
             *,
             DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
           FROM [filter_result]
-          WHERE [mc_no] = '${mc_no}'
+          WHERE [mc_no] = :mc_no
           ORDER BY [mc_no], [occurred_start]
-      `
+      `,
+      {
+        replacements: { mc_no, startDate, targetEndDate },
+      }
     );
     const colorMap = {};
     const palette = [
@@ -789,10 +797,13 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
         [ring_factor]
           FROM ${DATABASE_PROD} p
           LEFT JOIN ${DATABASE_MASTER} m ON p.mc_no = m.mc_no
-      WHERE p.mc_no = '${mc_no}'
-      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
+      WHERE p.mc_no = :mc_no
+      AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 7, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = :date
       ORDER BY registered ASC
-    `
+    `,
+    {
+      replacements: { mc_no, date },
+    }
   );
 
   const result = calculateShifts(data[0], date);
