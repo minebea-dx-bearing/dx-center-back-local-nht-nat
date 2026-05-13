@@ -266,6 +266,8 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     const result = await getStatusTimeline(dbms, mc_no, date, {
       databaseAlarm: DATABASE_ALARM,
       databaseIot: DATABASE_IOT,
+      startHour: 6,
+      startMinute: 0,
     });
     const dataChart = generateData(result);
 

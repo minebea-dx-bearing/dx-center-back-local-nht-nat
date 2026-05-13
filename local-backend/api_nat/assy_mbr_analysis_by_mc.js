@@ -39,8 +39,8 @@ const calculateShifts = (data, date) => {
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl = (diff_total / ((seconds / A_end.target_ct) * A_end.ring_factor)) * 100;
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       All = {
         ...A_end,
@@ -64,8 +64,8 @@ const calculateShifts = (data, date) => {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
       const utl = (Mrow.prod_total / ((seconds / Mrow.target_ct) * Mrow.ring_factor)) * 100;
-      const ach = (Mrow.prod_total / target_prod) * 100 || 0.00;
-      const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100 || 0.00;
+      const ach = (Mrow.prod_total / target_prod) * 100 || 0.0;
+      const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100 || 0.0;
 
       M = {
         ...Mrow,
@@ -86,8 +86,8 @@ const calculateShifts = (data, date) => {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, N_start);
       const utl = (diff_total / ((seconds / N_start.target_ct) * N_start.ring_factor)) * 100;
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       N = {
         ...N_end,
@@ -111,8 +111,8 @@ const calculateShifts = (data, date) => {
       const target_prod = calcTargetProd(seconds, M || N);
       const utl = (diff_total / ((seconds / M.target_ct) * M.ring_factor)) * 100;
 
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       All = {
         ...data[data.length - 1],
@@ -142,7 +142,7 @@ const calculateShifts = (data, date) => {
     N: N ? [N] : [],
     All: All ? [All] : [],
   };
-}
+};
 
 // MASTER MACHINE NO.
 router.get("/master_machine", async (req, res) => {
@@ -152,7 +152,7 @@ router.get("/master_machine", async (req, res) => {
         SELECT DISTINCT(UPPER(mc_no)) AS mc_no
         FROM ${DATABASE_PROD}
         ORDER BY mc_no ASC
-      `
+      `,
     );
 
     res.json({ data: master[0], success: true, message: "ok" });
@@ -189,7 +189,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       `,
       {
         replacements: { mc_no, date },
-      }
+      },
     );
 
     if (data[0].length > 0) {
@@ -266,6 +266,8 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     const result = await getStatusTimeline(dbms, mc_no, date, {
       databaseAlarm: DATABASE_ALARM,
       databaseIot: DATABASE_IOT,
+      startHour: 6,
+      startMinute: 0,
     });
     const dataChart = generateData(result);
     const summaryAlarm = summarize(dataChart);
@@ -303,7 +305,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
     `,
     {
       replacements: { mc_no, date },
-    }
+    },
   );
 
   const result = calculateShifts(data[0], date);

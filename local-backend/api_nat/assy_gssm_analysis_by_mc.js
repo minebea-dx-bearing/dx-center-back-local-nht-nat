@@ -30,8 +30,7 @@ const calculateShifts = (data, date) => {
     const A_start = data.find((r) => r.TIME.startsWith("07:"));
     const nowHour = now.getHours();
     const nowStr = `${nowHour.toString().padStart(2, "0")}:`;
-    const A_end =
-      data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
+    const A_end = data.find((r) => r.TIME.startsWith(nowStr)) || data[data.length - 1];
 
     if (A_start && A_end) {
       const diff_total = A_end.prod_total;
@@ -40,8 +39,8 @@ const calculateShifts = (data, date) => {
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl = (diff_total / ((seconds / A_end.target_ct) * A_end.ring_factor)) * 100;
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       All = {
         ...A_end,
@@ -64,10 +63,9 @@ const calculateShifts = (data, date) => {
     if (Mrow) {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
-      const utl =
-        (Mrow.prod_total / ((seconds / Mrow.target_ct) * Mrow.ring_factor)) * 100;
-      const ach = (Mrow.prod_total / target_prod) * 100 || 0.00;
-      const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100 || 0.00;
+      const utl = (Mrow.prod_total / ((seconds / Mrow.target_ct) * Mrow.ring_factor)) * 100;
+      const ach = (Mrow.prod_total / target_prod) * 100 || 0.0;
+      const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100 || 0.0;
 
       M = {
         ...Mrow,
@@ -88,8 +86,8 @@ const calculateShifts = (data, date) => {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, N_start);
       const utl = (diff_total / ((seconds / N_start.target_ct) * N_start.ring_factor)) * 100;
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       N = {
         ...N_end,
@@ -113,8 +111,8 @@ const calculateShifts = (data, date) => {
       const target_prod = calcTargetProd(seconds, M || N);
       const utl = (diff_total / ((seconds / M.target_ct) * M.ring_factor)) * 100;
 
-      const ach = (diff_total / target_prod) * 100 || 0.00;
-      const yieldVal = (diff_ok / diff_total) * 100 || 0.00;
+      const ach = (diff_total / target_prod) * 100 || 0.0;
+      const yieldVal = (diff_ok / diff_total) * 100 || 0.0;
 
       All = {
         ...data[data.length - 1],
@@ -154,15 +152,13 @@ router.get("/master_machine", async (req, res) => {
         SELECT DISTINCT(UPPER(mc_no)) AS mc_no
         FROM ${DATABASE_PROD}
         ORDER BY mc_no ASC
-      `
+      `,
     );
 
     res.json({ data: master[0], success: true, message: "ok" });
   } catch (error) {
     console.error("API Error in /machines: ", error);
-    res
-      .status(500)
-      .json({ data: [], success: false, message: "Internal Server Error" });
+    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
   }
 });
 
@@ -193,7 +189,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       `,
       {
         replacements: { mc_no, date },
-      }
+      },
     );
 
     if (data[0].length > 0) {
@@ -204,11 +200,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       await calData.push(index_data);
 
       for (let i = 0; i < arrayData.length - 1; i++) {
-        await calData.push(
-          arrayData[i + 1].daily_total - arrayData[i].daily_total < 0
-            ? 0
-            : arrayData[i + 1].daily_total - arrayData[i].daily_total
-        );
+        await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
       }
 
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
@@ -264,9 +256,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       res.json({ data: [], data_raw: data[0], success: true, message: "ok" });
     }
   } catch (error) {
-    res
-      .status(500)
-      .json({ data: [], success: false, message: "Internal Server Error" });
+    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
   }
 });
 
@@ -276,6 +266,8 @@ router.get("/status/:mc_no/:date", async (req, res) => {
     const result = await getStatusTimeline(dbms, mc_no, date, {
       databaseAlarm: DATABASE_ALARM,
       databaseIot: DATABASE_IOT,
+      startHour: 6,
+      startMinute: 0,
     });
     const dataChart = generateData(result);
     const summaryAlarm = summarize(dataChart);
@@ -313,7 +305,7 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
     `,
     {
       replacements: { mc_no, date },
-    }
+    },
   );
 
   const result = calculateShifts(data[0], date);
