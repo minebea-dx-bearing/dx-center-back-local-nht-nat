@@ -40,7 +40,7 @@ const calculateShifts = (data, date) => {
 
       const target_prod = calcTargetProd(seconds, A_start);
       const utl =
-        (diff_total / (seconds / A_end.target_ct)) * 100 * A_end.ring_factor;
+        (diff_total / ((seconds / A_end.target_ct) * A_end.ring_factor)) * 100;
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -66,7 +66,7 @@ const calculateShifts = (data, date) => {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, Mrow);
       const utl =
-        (Mrow.prod_total / (seconds / Mrow.target_ct)) * 100 * Mrow.ring_factor;
+        (Mrow.prod_total / ((seconds / Mrow.target_ct) * Mrow.ring_factor)) * 100;
       const ach = (Mrow.prod_total / target_prod) * 100;
       const yieldVal = (Mrow.prod_ok / Mrow.prod_total) * 100;
 
@@ -89,9 +89,8 @@ const calculateShifts = (data, date) => {
       const seconds = 12 * 3600;
       const target_prod = calcTargetProd(seconds, N_start);
       const utl =
-        (diff_total / (seconds / N_start.target_ct)) *
-        100 *
-        N_start.ring_factor;
+        (diff_total / ((seconds / N_start.target_ct) * N_start.ring_factor)) *
+        100;
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
 
@@ -115,7 +114,7 @@ const calculateShifts = (data, date) => {
 
       const seconds = 24 * 3600; // 24 ชั่วโมงเต็ม
       const target_prod = calcTargetProd(seconds, M || N);
-      const utl = (diff_total / (seconds / M.target_ct)) * 100 * M.ring_factor;
+      const utl = (diff_total / ((seconds / M.target_ct) * M.ring_factor)) * 100;
 
       const ach = (diff_total / target_prod) * 100;
       const yieldVal = (diff_ok / diff_total) * 100;
