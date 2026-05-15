@@ -95,6 +95,6 @@ app.listen(process.env.PORT, () => {
 
 
 //TODO: check analysis page show correct data from fomular
-//TODO: refactor prepareData to recive start time of line from store
-//TODO: change utils fomular on analysis file
 //TODO: change time parameter on getStatusTimeline to relate line time like tn = 5:30, asssy = 6.00, gd = 7:00
+//TODO: many api on analysis endpoint still be 7:00 need to review and change to correct time
+//TODO: need to merge with P'Yelly Branch
