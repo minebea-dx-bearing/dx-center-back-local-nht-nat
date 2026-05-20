@@ -12,14 +12,37 @@ const store = getStore("GSSM");
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
+  let curr_mc_no = Object.keys(currentMachineData); 
+  for(let i=1; i<13; i++){
+    const target = `gssm${i.toString().padStart(2, '0')}`;
+    if(!curr_mc_no.includes(target)){
+        currentMachineData[target] = {
+            process: "gssm",
+            mc_no: target,
+            part_no: "no setup",
+            grease_ok: 0,
+            shield_ok: 0,
+            shield_a_ng: 0,
+            shield_b_ng: 0,
+            snap_a_ng: 0,
+            snap_b_ng: 0,
+            ro1_ng: 0,
+            ro2_ng: 0,
+            grease_ng: 0,
+            cycle_t: 0,
+            alarm: 'SIGNAL LOSE',
+            target_ct: 0,
+            target_utl: 0,
+            target_yield: 0,
+            target_special: 0,
+            ring_factor: 0
+        }
+    }
+  }
+
   // f_ -> Grease, s_ -> Shield
   return Object.values(currentMachineData).map((item) => {
     const s_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-
-    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
-    const sum_run = runInfo.sum_duration || 0;
-    const total_time = runInfo.total_time || 0;
-    const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
     let target = 0;
     if (item.target_special > 0) {
@@ -59,17 +82,19 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const s_denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
     const s_curr_utl = s_denom_utl > 0 ? Number(((s_total_pd / s_denom_utl) * 100).toFixed(2)) : 0;
 
-    const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
-    const downtime_seconds = total_time - sum_run - plan_shutdown;
-    const effective_time = total_time - plan_shutdown;
+    // ----- OEE -----
+    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    // console.log(runInfo)
+    const act_opn_time = runInfo.sum_duration || 0;
+    const total_work_time = runInfo.total_time || 0;
+    const plan_stop = runInfo.sum_planstop_duration || 0;
+    const production_count = s_act_pd + s_ng_pd || 0;
+    // console.log(item.mc_no, act_opn_time)
 
-    const availability = effective_time > 0 ? Number(((sum_run / effective_time) * 100).toFixed(2)) : 0;
-    const denom_perf = s_target_ct > 0 && effective_time > 0 ? effective_time / s_target_ct : 0;
-    const performance_grease = denom_perf > 0 ? Number(((grease_total / denom_perf) * 100).toFixed(2)) : 0;
-    const performance_shield = denom_perf > 0 ? Number(((shield_total / denom_perf) * 100).toFixed(2)) : 0;
-
-    const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
-    const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const s_availability = Number(((act_opn_time / (total_work_time - plan_stop)) * 100).toFixed(2)) || 0;
+    // console.log(target_ct, production_count,act_opn_time , item.ring_factor)
+    const s_performance = Number((((s_target_ct * production_count) / (act_opn_time * item.ring_factor)) * 100).toFixed(2)) || 0;
+    const s_oee = Number(((s_performance / 100) * (s_availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
       part_no: item.part_no,
@@ -80,7 +105,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_target_pd,
       s_target_pd: f_target_pd,
       f_act_pd: item.grease_ok,
-      S_act_pd: item.shield_ok, //? why 'S' Charecter is UpperCASE? --- IGNORE ---
+      s_act_pd: item.shield_ok,
       s_target_yield,
       f_diff_pd,
       s_diff_pd,
@@ -92,8 +117,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       s_target_utl,
       s_curr_utl,
       s_status_alarm,
-      f_yield_calc_total: yield_calc_total,
-      s_yield_calc_total: yield_calc_total,
+      s_availability,
+      s_performance,
+      s_quality: s_curr_yield,
+      s_oee,
+      yield_calc_total: yield_calc_total,
+      curr_mc_no
     };
   });
 };

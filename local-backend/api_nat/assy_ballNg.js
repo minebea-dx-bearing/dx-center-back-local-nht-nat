@@ -224,7 +224,7 @@ router.post("/selectMic_item", async (req, res) => {
 router.post("/getMicData", async (req, res) => {
     try{
         let { startDateQuery, endDateQuery, machine_no = "ALL", part = "ALL" } = req.body;
-        console.log(startDateQuery, endDateQuery)
+        // console.log(startDateQuery, endDateQuery)
         if (machine_no.length === 0) {
             machine_no = "ALL";
         }
@@ -345,8 +345,6 @@ router.post("/getTop3MicData", async (req, res) => {
             const formattedIn = part.map(item => `'${item}'`).join(',');
             partCondition = `AND part_no IN (${formattedIn})`;
         }
-
-        console.log()
 
         let dataTop3 = await queryRawTop3DataTable(startDateQuery, endDateQuery, mcCondition, partCondition)
 

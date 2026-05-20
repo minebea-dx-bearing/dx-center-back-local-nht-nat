@@ -23,18 +23,19 @@ router.get("/", async (req, res) => {
 
   const combinedData = [...dataMBRF, ...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAOD, ...dataAVS, ...dataALU].map((item) => {
     let machineNumber = 0;
-    if (item.mc_no.includes("ANT")) {
-      machineNumber = parseInt(item.mc_no.slice(-2)) + (parseInt(item.mc_no.slice(-2)) - 1);
-    }else{
-      machineNumber = parseInt(item.mc_no.slice(-2));
-    }
-    const lineMaster = machineNumber === 1 || machineNumber === 3? `${item.process}-FIRST` : `${item.process}-SECOND`;
+    // if (item.mc_no.includes("ANT")) {
+    //   machineNumber = parseInt(item.mc_no.slice(-2)) + (parseInt(item.mc_no.slice(-2)) - 1);
+    // }else{
+    // }
+    machineNumber = parseInt(item.mc_no.slice(-2));
+    const lineMaster = machineNumber % 2 === 1 ? `${item.process}-FIRST` : `${item.process}-SECOND`;
     return {
       ...item,
       lineMaster,
       line: machineNumber,
     };
   });
+  // console.log(combinedData)
 
   const finalStructure = combinedData.reduce((acc, machine) => {
     // acc คือ object ที่เรากำลังสร้างขึ้น (accumulator)

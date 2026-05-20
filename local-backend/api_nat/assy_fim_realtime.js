@@ -12,13 +12,33 @@ const store = getStore("FIM");
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
+  let curr_mc_no = Object.keys(currentMachineData); 
+  for(let i=1; i<13; i++){
+    const target = `fim${i.toString().padStart(2, '0')}`;
+    if(!curr_mc_no.includes(target)){
+        currentMachineData[target] = {
+            process: "fim",
+            mc_no: target,
+            part_no: "no setup",
+            fim_ok: 0,
+            id_ng: 0,
+            od_ng: 0,
+            width_ng: 0,
+            chamfer_ng: 0,
+            mix_ng: 0,
+            cycle_t: 0,
+            alarm: 'SIGNAL LOSE',
+            target_ct: 0,
+            target_utl: 0,
+            target_yield: 0,
+            target_special: 0,
+            ring_factor: 0
+        }
+    }
+  }
+
   return Object.values(currentMachineData).map((item) => {
     const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-
-    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
-    const sum_run = runInfo.sum_duration || 0;
-    const total_time = runInfo.total_time || 0;
-    const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
     let target = 0;
     if (item.target_special > 0) {
@@ -46,13 +66,18 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;
     const curr_utl = denom_utl > 0 ? Number(((total_pd / denom_utl) * 100).toFixed(2)) : 0;
 
-    const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
-    const downtime_seconds = total_time - sum_run - plan_shutdown;
-    const effective_time = total_time - plan_shutdown;
+    // ----- OEE -----
+    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    // console.log(runInfo)
+    const act_opn_time = runInfo.sum_duration || 0;
+    const total_work_time = runInfo.total_time || 0;
+    const plan_stop = runInfo.sum_planstop_duration || 0;
+    const production_count = act_pd + ng_pd || 0;
+    // console.log(item.mc_no, act_opn_time)
 
-    const availability = effective_time > 0 ? Number(((sum_run / effective_time) * 100).toFixed(2)) : 0;
-    const denom_perf = target_ct > 0 && effective_time > 0 ? effective_time / target_ct : 0;
-    const performance = denom_perf > 0 ? Number(((total_pd / denom_perf) * 100).toFixed(2)) : 0;
+    const availability = Number(((act_opn_time / (total_work_time - plan_stop)) * 100).toFixed(2)) || 0;
+    // console.log(target_ct, production_count,act_opn_time , item.ring_factor)
+    const performance = Number((((target_ct * production_count) / (act_opn_time * item.ring_factor)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
@@ -71,16 +96,12 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       target_ct,
       target_utl,
       curr_utl,
-      sum_run,
-      total_time,
-      opn,
-      downtime_seconds,
-      plan_shutdown,
       availability,
       performance,
+      quality: curr_yield,
       oee,
-      f_yield_calc_total: yield_calc_total,
-      s_yield_calc_total: yield_calc_total,
+      yield_calc_total: yield_calc_total,
+      curr_mc_no
     };
   });
 };

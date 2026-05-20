@@ -42,29 +42,18 @@ const store = createProcessStore({
   masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
 });
 
-const shiftDateKey = () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`;
-
-const makeLoader = (mode) => async () => {
-  const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode });
-  const result = await dbms.query(sql);
-  return result[1] > 0 ? result[0] : [];
-};
-
-const runningTimeWithPlanStop = createRunningTimeCache({
-  ttlMs: 20_000,
-  keyFn: () => `${shiftDateKey()}-withPS`,
-  loader: makeLoader("withPlanStop"),
-});
-
-const runningTimeRunOnly = createRunningTimeCache({
-  ttlMs: 20_000,
-  keyFn: () => `${shiftDateKey()}-runOnly`,
-  loader: makeLoader("runOnly"),
-});
+const runningTimeCache = createRunningTimeCache({
+    ttlMs: 20_000,
+    keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
+    loader: async () => {
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop" });
+      const result = await dbms.query(sql);
+      return result[1] > 0 ? result[0] : [];
+    },
+  });
 
 module.exports = {
   getSnapshot: store.getSnapshot,
   getRawMap: store.getRawMap,
-  getRunningTimeWithPlanStop: () => runningTimeWithPlanStop.get(),
-  getRunningTimeRunOnly: () => runningTimeRunOnly.get(),
+  getRunningTime: () => runningTimeCache.get(),
 };

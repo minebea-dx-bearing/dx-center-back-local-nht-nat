@@ -22,9 +22,9 @@
 const moment = require("moment");
 
 const SUMMARY_FIELDS = {
-  standard: { target: "target_pd", ok: "act_pd", ct: "act_ct", utl: "curr_utl" },
-  fSpindle: { target: "f_target_pd", ok: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl" },
-  sSpindle: { target: "s_target_pd", ok: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl" },
+  standard: { target: "target_pd", ok: "act_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
+  fSpindle: { target: "f_target_pd", ok: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "f_oee" },
+  sSpindle: { target: "s_target_pd", ok: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "s_oee" },
 };
 
 const summarize = (dataArray, fields) => {
@@ -34,10 +34,16 @@ const summarize = (dataArray, fields) => {
       a.total_ok += item[fields.ok] || 0;
       a.total_cycle_t += item[fields.ct] || 0;
       a.total_utl += item[fields.utl] || 0;
-      a.count += 1;
+      a.total_oee *= (item[fields.oee] / 100) || 1;
+      if(dataArray[0].curr_mc_no) {
+        a.count = dataArray[0].curr_mc_no.length;
+      }
+      else{
+        a.count += 1
+      }
       return a;
     },
-    { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 },
+    { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0, total_oee: 1 },
   );
 
   return {
@@ -45,8 +51,10 @@ const summarize = (dataArray, fields) => {
     sum_daily_ok: acc.total_ok,
     avg_cycle_t: acc.count > 0 ? Number((acc.total_cycle_t / acc.count).toFixed(2)) : 0,
     avg_utl: acc.count > 0 ? Number((acc.total_utl / acc.count).toFixed(2)) : 0,
+    avg_oee: acc.total_oee * 100
   };
 };
+
 
 const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary }) => {
   const fields = summary ? SUMMARY_FIELDS[summary] : null;

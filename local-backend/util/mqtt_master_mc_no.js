@@ -43,7 +43,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
               p.*, -- เลือกทุกคอลัมน์จาก Production
               ISNULL(a.[alarm], 'no data') AS [alarm],
               a.[occurred],
-              ISNULL(m.[part_no], 0) AS [part_no],
+              ISNULL(m.[part_no], 'no setup') AS [part_no],
               ISNULL(m.[target_ct], 0) AS [target_ct],
               ISNULL(m.[target_utl], 0) AS [target_utl],
               ISNULL(m.[target_yield], 0) AS [target_yield],

@@ -23,7 +23,6 @@ const moment = require("moment");
 const ALARM_FILTERS = {
   withPlanStop: `([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
   withPlanStopAnt: `([alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
-  runOnly: `([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_')`,
 };
 
 const FINAL_SELECTS = {
@@ -31,28 +30,38 @@ const FINAL_SELECTS = {
   SELECT
     [mc_no],
     CASE WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-    CASE WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planshutdown_duration],
+    CASE WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
     DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
   FROM [filter_time]
   GROUP BY [mc_no], [alarm_base]`,
 
   withPlanStopAnt: `
-  SELECT
-    [mc_no],
-    [alarm_base],
-    CASE WHEN [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-    CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planshutdown_duration],
-    DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-  FROM [filter_time]
-  GROUP BY [mc_no], [alarm_base]`,
+  ,[alarm_f] AS (
+			SELECT
+				LEFT([mc_no], 3) + '0' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)) AS [mc_no],
+				[alarm_base],
+				CASE WHEN [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
+				CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
+				DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
+			FROM [filter_time]
+			WHERE [alarm_base] LIKE 'RUN FRONT%' OR [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%'
+			GROUP BY [mc_no], [alarm_base]
+		),
+		[alarm_r] AS (
+			SELECT
+				LEFT([mc_no], 3) + '0' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)) AS [mc_no],
+				[alarm_base],
+				CASE WHEN [alarm_base] LIKE 'RUN REAR%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
+				CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
+				DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
+			FROM [filter_time]
+			WHERE [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%'
+			GROUP BY [mc_no], [alarm_base]
+		)
+		SELECT * FROM [alarm_f]
+		UNION
+		SELECT * FROM [alarm_r]`,
 
-  runOnly: `
-  SELECT
-    [mc_no],
-    SUM([duration_seconds]) AS [sum_duration],
-    DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-  FROM [filter_time]
-  GROUP BY [mc_no]`,
 };
 
 const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode }) => {

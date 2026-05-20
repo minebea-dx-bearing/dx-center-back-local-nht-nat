@@ -27,11 +27,6 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   return Object.values(machines).map((item) => {
     const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
-    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
-    const sum_run = runInfo.sum_duration || 0;
-    const total_time = runInfo.total_time || 0;
-    const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
-
     let target = 0;
     if (item.target_special > 0) {
       target = item.target_special;
@@ -51,18 +46,23 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
     const total_pd = act_pd + ng_pd;
-    const curr_yield = total_pd > 0 ? Number(((act_pd / total_pd) * 100).toFixed(2)) : 0;
+    const curr_yield = Number((item.yield_ok / 10).toFixed(2));
 
     const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;
     const curr_utl = denom_utl > 0 ? Number(((total_pd / denom_utl) * 100).toFixed(2)) : 0;
 
-    const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
-    const downtime_seconds = total_time - sum_run - plan_shutdown;
-    const effective_time = total_time - plan_shutdown;
+    // ----- OEE -----
+    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    // console.log(runInfo)
+    const act_opn_time = runInfo.sum_duration || 0;
+    const total_work_time = runInfo.total_time || 0;
+    const plan_stop = runInfo.sum_planstop_duration || 0;
+    const production_count = act_pd + ng_pd || 0;
+    // console.log(item.mc_no, act_opn_time)
 
-    const availability = effective_time > 0 ? Number(((sum_run / effective_time) * 100).toFixed(2)) : 0;
-    const denom_perf = target_ct > 0 && effective_time > 0 ? effective_time / target_ct : 0;
-    const performance = denom_perf > 0 ? Number(((total_pd / denom_perf) * 100).toFixed(2)) : 0;
+    const availability = Number(((act_opn_time / (total_work_time - plan_stop)) * 100).toFixed(2)) || 0;
+    // console.log(target_ct, production_count,act_opn_time , item.ring_factor)
+    const performance = Number((((target_ct * production_count) / (act_opn_time * item.ring_factor)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
@@ -82,13 +82,9 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
       target_ct,
       target_utl,
       curr_utl,
-      sum_run,
-      total_time,
-      opn,
-      downtime_seconds,
-      plan_shutdown,
       availability,
       performance,
+      quality: curr_yield,
       oee,
     };
   });
@@ -98,7 +94,7 @@ router.get(
   "/machines",
   makeMachinesHandler({
     getMachines: () => store.getSnapshot(isInBoreMachine),
-    getRunningTime: store.getRunningTimeWithPlanStop,
+    getRunningTime: store.getRunningTime,
     prepareRealtimeData,
     summary: "standard",
   }),
@@ -107,6 +103,6 @@ router.get(
 module.exports = {
   router,
   prepareRealtimeData,
-  queryCurrentRunningTime: store.getRunningTimeWithPlanStop,
+  queryCurrentRunningTime: store.getRunningTime,
   getMachineData: () => store.getRawMap(),
 };
