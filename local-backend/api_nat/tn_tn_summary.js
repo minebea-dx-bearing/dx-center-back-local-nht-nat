@@ -148,7 +148,7 @@ router.post("/data", async (req, res) => {
           [base_alarm] AS (
               SELECT
                   [mc_no],
-              CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
+                  [occurred],
                   [alarm],
                   CASE
                       WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
@@ -159,7 +159,7 @@ router.post("/data", async (req, res) => {
                       ELSE 'before'
                   END AS [alarm_type]
               FROM [nat_mc_mcshop_tn].[dbo].[DATA_ALARMLIS_TN]
-              WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_'
+              WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_')
           ),
           [with_pairing] AS (
               SELECT *,
@@ -178,11 +178,11 @@ router.post("/data", async (req, res) => {
                   [mc_no],
                   [alarm_base],
               CASE
-                  WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
+                  WHEN [occurred] < @start_date THEN @start_date
                   ELSE [occurred]
               END AS [occurred_start],
               CASE
-                  WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
+                  WHEN [occurred_next] > @end_date THEN @end_date
                   ELSE [occurred_next]
               END AS [occurred_end]
               FROM [with_pairing]

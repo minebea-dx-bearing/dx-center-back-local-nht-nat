@@ -92,3 +92,6 @@ app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime")
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
+
+
+//TODO: check analysis page show correct data from fomular

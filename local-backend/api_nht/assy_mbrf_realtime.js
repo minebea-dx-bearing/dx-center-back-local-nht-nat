@@ -1,217 +1,61 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nht");
-const mqtt = require("mqtt");
-const moment = require("moment");
 
-const master_mc_no = require("../util/mqtt_master_mc_no");
 const determineMachineStatus = require("../util/determineMachineStatus");
+const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
+const { getStore } = require("./_store_assy");
 
-// In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
-let machineData = {};
+const startTime = 6;
+const store = getStore("ASSYF", { alarmTableSuffix: "DATA_ALARMLIST" });
 
-// --- Configurations ---
-const processName = "ASSYF"; // MBR FRONT
-const MQTT_SERVER = "10.128.16.201";
-const PORT = "1883";
-const startTime = 6; // start time 06:00
-const DATABASE_PROD = `[data_machine_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
-const DATABASE_ALARM = `[data_machine_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIST_${processName.toUpperCase()}]`;
-const DATABASE_MASTER = `[data_machine_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
+const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
-const reloadMasterData = async () => {
-  console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
-  try {
-    const sqlDataArray = await master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER);
-    if (!sqlDataArray) return;
-
-    const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
-
-    // 1. เพิ่ม/อัปเดตเครื่องจักรจาก SQL
-    for (const row of sqlDataArray) {
-      if (machineData.hasOwnProperty(row.mc_no)) {
-        machineData[row.mc_no] = {
-          ...machineData[row.mc_no],
-          ...row,
-        };
-      } else {
-        machineData[row.mc_no] = { ...row, source: "SQL" };
-      }
-    }
-
-    for (const mc_no in machineData) {
-      if (!sqlDataMap.has(mc_no)) {
-        console.log(`Machine ${processName.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
-        delete machineData[mc_no];
-      }
-    }
-
-    console.log(`Master data reloaded. Total machines ${processName.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
-  } catch (error) {
-    console.error("Failed to reload master ${processName.toUpperCase()} data:", error);
-  }
-};
-
-// MQTT connect
-const client = mqtt.connect(`mqtt://${process.env.NHT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
-client.on("connect", () => {
-  console.log("MQTT Connected");
-  client.subscribe("#", (err) => {
-    if (!err) console.log(`Subscribed to all topics (#) for ${processName.toUpperCase()}`);
-  });
-});
-client.on("message", (topic, message) => {
-  try {
-    const mc_no = topic.split("/").pop();
-
-    if (machineData.hasOwnProperty(mc_no)) {
-      // 1. แปลง message เป็น String
-      let rawData = message.toString();
-
-      // 2. ดักและล้าง Control Characters (อักขระตัวปัญหาที่ทำให้ JSON พัง)
-      // ช่วงอักขระ \x00-\x1F คืออักขระควบคุมที่มักทำให้เกิด SyntaxError ใน JSON
-      const cleanData = rawData.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
-
-      // 3. ลอง Parse ข้อมูลที่ Clean แล้ว
-      const mqttData = JSON.parse(cleanData);
-
-      machineData[mc_no] = {
-        ...machineData[mc_no],
-        ...mqttData,
-        updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
-        source: "MQTT",
-      };
-    }
-  } catch (error) {
-    // ถ้ายังพังอยู่ ให้ Print message ออกมาดูว่าตัวที่ 257 คืออะไร
-    console.error("MQTT Message Error at MC:", topic.split("/").pop());
-    console.error("Error Detail:", error.message);
-    console.error("Raw Message (First 300 chars):", message.toString().substring(0, 300));
-  }
-});
-
-const queryCurrentRunningTime = async () => {
-  const result = await dbms.query(
-    `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, "0")}:00:00';
-        DECLARE @end_date DATETIME = GETDATE();
-        DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
-        DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
-
-        WITH [base_alarm] AS (
-            SELECT
-                [mc_no],
-            CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
-                [alarm],
-                CASE
-                    WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
-                    ELSE [alarm]
-                END AS [alarm_base],
-                CASE
-                    WHEN RIGHT([alarm], 1) = '_' THEN 'after'
-                    ELSE 'before'
-                END AS [alarm_type]
-            FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND [alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%'
-        ),
-        [with_pairing] AS (
-            SELECT *,
-                ISNULL(
-                LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
-                @end_date
-            ) AS [occurred_next],
-            ISNULL(
-                LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
-                'after'
-            ) AS [next_type]
-            FROM [base_alarm]
-        ),
-        [paired_alarms] AS (
-            SELECT
-                [mc_no],
-                [alarm_base],
-            CASE
-                WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
-                ELSE [occurred]
-            END AS [occurred_start],
-            CASE
-                WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
-                ELSE [occurred_next]
-            END AS [occurred_end]
-            FROM [with_pairing]
-            WHERE [alarm_type] = 'before' AND [next_type] = 'after'
-        ),
-        [filter_time] AS (
-            SELECT
-            *,
-            DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-            FROM [paired_alarms]
-            WHERE [occurred_end] > [occurred_start]
-        )
-
-        SELECT
-            [mc_no],
-            CASE
-            WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) 
-            ELSE  0 
-          END AS [sum_duration],
-          CASE
-            WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) 
-            ELSE  0 
-          END AS [sum_planshutdown_duration],
-            DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-        FROM [filter_time]
-        GROUP BY [mc_no], [alarm_base]
-    `
-  );
-  return result[1] > 0 ? result[0] : [];
-};
-
-const prepareRealtimeData = (currentMachineData, runningTimeData) => {
   return Object.values(currentMachineData).map((item) => {
-    let f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
-    
+    const f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
     const total_time = runInfo.total_time || 0;
     const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
 
-    let target =
-      item.target_special > 0
-        ? item.target_special
-        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
-    let f_target_ct = item.target_ct || 0;
-    let f_target_utl = item.target_utl || 0;
+    let target = 0;
+    if (item.target_special > 0) {
+      target = item.target_special;
+    } else if (item.target_ct > 0) {
+      target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    }
+    const f_target_ct = item.target_ct || 0;
+    const f_target_utl = item.target_utl || 0;
 
-    // เปลี่ยนชื่อใหม่เหมือนๆกัน
     const f_act_pd = item.match || 0;
     const f_ng_pd = item.a_ng + item.a_ng_p + item.a_ng_n + item.a_unm + item.b_ng_p + item.b_ng_n + item.b_unm || 0;
-    const f_act_ct = (item.cycle_t || 0)/ 100 || 0;
+    const f_act_ct = (item.cycle_t || 0) / 100 || 0;
 
-    const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
-    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const f_diff_pd = f_act_pd - f_target_pd;
     const f_diff_ct = Number((f_act_ct - f_target_ct).toFixed(2));
 
     const f_curr_yield = Number(((f_act_pd / (f_act_pd + f_ng_pd)) * 100 || 0).toFixed(2));
 
-    const f_curr_utl = Number(((( f_act_pd + f_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / f_target_ct)) * 100).toFixed(2)) || 0;
+    const denom_utl = f_target_ct > 0 ? (elapsedSec * item.ring_factor) / f_target_ct : 0;
+    const f_curr_utl = denom_utl > 0 ? Number((((f_act_pd + f_ng_pd) / denom_utl) * 100).toFixed(2)) || 0 : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const f_downtime_seconds = total_time - sum_run - plan_shutdown;
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
-    const performance = Number((((f_act_pd + f_ng_pd) / ((total_time - plan_shutdown) / f_target_ct)) * 100).toFixed(2)) || 0;
+    const denom_perf = f_target_ct > 0 && total_time - plan_shutdown > 0 ? (total_time - plan_shutdown) / f_target_ct : 0;
+    const performance = denom_perf > 0 ? Number((((f_act_pd + f_ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
     const f_oee = Number(((performance / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
-      // ...item,
       part_no: item.part_no === "" ? item.model : item.part_no,
       mc_no: item.mc_no.replace("_f", "").toUpperCase(),
       model: item.model || "NO DATA",
-      process: "MBR_F",// item.process.toUpperCase(),
+      process: "MBR_F",
       f_status_alarm,
       f_target_yield: item.target_yield || 0,
       target,
@@ -224,37 +68,24 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       f_curr_yield,
       f_curr_utl,
       f_target_utl,
-      // f_ng_pd,
-      // sum_run,
-      // total_time,
-      // opn,
-      // plan_shutdown,
-      // availability,
-      // performance,
       f_downtime_seconds,
       f_oee,
     };
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime);
-    // console.log(dataArray)
-    res.json({ success: true, data: dataArray });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-reloadMasterData();
-setInterval(reloadMasterData, 300000);
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+  }),
+);
 
 module.exports = {
   router,
   prepareRealtimeData,
-  queryCurrentRunningTime,
-  getMachineData: () => machineData,
+  queryCurrentRunningTime: store.getRunningTime,
+  getMachineData: () => store.getRawMap(),
 };
