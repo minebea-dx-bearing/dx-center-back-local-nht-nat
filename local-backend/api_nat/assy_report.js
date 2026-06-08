@@ -840,9 +840,10 @@ EXEC sp_executesql
     `);
     return antf[0].map((item) => {
         const mc = Number(item.mc_no.slice(-2))
+        const calc = mc*2
         return {
             ...item,
-            mc_no: item.mc_no.slice(0,3) + "0" + mc*2,
+            mc_no: item.mc_no.slice(0,3) + String(calc).padStart(2, '0'),
         };
     });
 };
@@ -977,7 +978,7 @@ EXEC sp_executesql
         const calc = mc+(mc-1)
         return {
             ...item,
-            mc_no: item.mc_no.slice(0,3) + "0" + calc,
+            mc_no: item.mc_no.slice(0,3) + String(calc).padStart(2, '0'),
         };
     });
 };
@@ -1947,7 +1948,7 @@ WITH [antr] AS (
 	SELECT
 		prod.[work_date]
 		,prod.[process]
-		,LEFT(prod.[mc_no], 3) + ''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT(prod.[mc_no], 2)) + (CONVERT(INT, RIGHT(prod.[mc_no], 2)) - 1)) AS [mc_no]
+		,LEFT(prod.[mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT(prod.[mc_no], 2)) + (CONVERT(INT, RIGHT(prod.[mc_no], 2)) - 1)),2) AS [mc_no]
 		,Null AS [count_mc_no]
 		,mt.[target_ct]
 		,mt.[target_special]
@@ -1961,7 +1962,7 @@ WITH [antr] AS (
 	SELECT
 		prod.[work_date]
 		,prod.[process]
-		,LEFT(prod.[mc_no], 3) + ''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT(prod.[mc_no], 2)) * 2)) AS [mc_no]
+		,LEFT(prod.[mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT(prod.[mc_no], 2)) * 2)),2) AS [mc_no]
 		,Null AS [count_mc_no]
 		,mt.[target_ct]
 		,mt.[target_special]

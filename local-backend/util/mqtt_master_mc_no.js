@@ -7,6 +7,11 @@
  */
 const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER) => {
   try {
+    // let statusColumn = "[alarm]"; 
+
+    // if (DATABASE_ALARM.includes('DATA_MCSTATUS')) { // สมมติตัวอย่างเงื่อนไข
+    //     statusColumn = "[mc_status]";
+    // }
     const result = await dbms.query(
       `
         WITH LatestProduction AS (
@@ -24,8 +29,8 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
                 ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
             FROM ${DATABASE_ALARM}
             WHERE
-                UPPER([alarm]) LIKE '%RUN%'
-                AND [occurred] >= DATEADD(day, -3, GETDATE())
+                UPPER([alarm]) LIKE '%RUN%'AND 
+                [occurred] >= DATEADD(day, -3, GETDATE())
         ),
         MasterTarget AS (
             SELECT
@@ -60,6 +65,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
           ORDER BY p.[mc_no];
       `
     );
+    // console.log(result[0])
 
     // dbms.query จะคืนค่าเป็น [results, metadata]
     return result[0];
