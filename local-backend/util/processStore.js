@@ -34,6 +34,7 @@ const createProcessStore = ({
     try {
       const rows = await masterLoader(); // * execute SQL query and get array of machine data
       if (!rows) return;
+      // console.log(rows)
 
       const seen = new Set();
       for (const row of rows) { 
@@ -57,10 +58,13 @@ const createProcessStore = ({
 
   hub.register({ //subscribe MQTT topic and update live data on message
     accepts: (mc_no) => Object.prototype.hasOwnProperty.call(master, mc_no),
-    onMessage: (mc_no, payload) => {
+    onMessage: (mc_no, payload, topic) => {
+      // console.log(master, mc_no, payload.status)
       live[mc_no] = {
         ...live[mc_no],
         ...payload,
+        // test: payload.status,
+        // topic,
         updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
         source: "MQTT",
       };
@@ -91,6 +95,7 @@ const createProcessStore = ({
 
   const getRawMap = () => {// * get map of merged data for all machines, keyed by mc_no (for API routes that need to look up machines individually) */
     const out = {};
+    // console.log(master)
     for (const mc_no of Object.keys(master)) {
       const merged = mergeOne(mc_no);
       if (merged) out[mc_no] = merged;
