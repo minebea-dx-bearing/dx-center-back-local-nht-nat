@@ -12,6 +12,7 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
+// const store = require("./_store_2gd_ir");
 const store = require("./_store_2gd");
 
 const isInBoreMachine = (mc_no) => {
@@ -25,6 +26,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(machines).map((item) => {
+    // console.log(item.mc_no,item.alarm)
     const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
 
     let target = 0;

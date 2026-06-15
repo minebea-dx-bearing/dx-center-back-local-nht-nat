@@ -29,8 +29,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     // for example: ANT01 includes front side and rear side -> split into ANT01 for rear side and ANT02 for front side
     const mc = Number(item.mc_no.slice(-2))
     const calc_mc_no = mc+(mc-1)
-    const mc_no_front = item.mc_no.slice(0,3) + "0" + mc*2
-    const mc_no_rear = item.mc_no.slice(0,3) + "0" + calc_mc_no
+    const mc_no_front = item.mc_no.slice(0,3) + String(mc*2).padStart(2, '0')
+    const mc_no_rear = item.mc_no.slice(0,3) + String(calc_mc_no).padStart(2, '0')
 
     const data_front = {...item, mc_no: mc_no_front, alarm: item.alarm_front, occurred: item.occurred_front}
     const data_rear = {...item, mc_no: mc_no_rear, alarm: item.alarm_rear, occurred: item.occurred_rear}
