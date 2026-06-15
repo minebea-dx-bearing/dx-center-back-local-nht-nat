@@ -137,6 +137,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       act_ct,
       diff_ct,
       curr_yield,
+      target_yield,
       target_ct,
       target_utl,
       curr_utl,
