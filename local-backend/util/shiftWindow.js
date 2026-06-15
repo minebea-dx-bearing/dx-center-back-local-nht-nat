@@ -17,7 +17,7 @@ const moment = require("moment");
  *          elapsedMin/elapsedSec are clamped to >= 0 to defend against clock skew.
  */
 const shiftWindow = (now, startHour, startMinute = 0) => {
-  const ref = moment(now);
+  const ref = moment(now); //! use local time bangkok time zone, not UTC, to align with factory operations and avoid confusion around DST changes
   const todaysStart = moment(ref).startOf("day").hour(startHour).minute(startMinute);
   const start_time = ref.isBefore(todaysStart) ? moment(todaysStart).subtract(1, "day") : todaysStart;
 
