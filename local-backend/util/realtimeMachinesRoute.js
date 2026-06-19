@@ -64,7 +64,7 @@ const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData,
     try {
       const now = moment();
       const [machines, runningTime] = await Promise.all([Promise.resolve(getMachines()), getRunningTime()]);
-      const dataArray = prepareRealtimeData(machines, runningTime, now);
+      const dataArray = await prepareRealtimeData(machines, runningTime, now);
       const body = { success: true, data: dataArray };
       if (fields) body.resultSummary = summarize(dataArray, fields);
       res.json(body);

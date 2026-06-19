@@ -12,8 +12,8 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
         WITH LatestProduction AS (
             -- CTE นี้ยังคงเหมือนเดิม: ดึงข้อมูล production ล่าสุดของแต่ละเครื่อง
             SELECT
-                *,
-                ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+                *
+                ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
             FROM ${DATABASE_PROD}
             WHERE [registered] >= DATEADD(day, -3, GETDATE())
         ),
@@ -42,18 +42,6 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
                 UPPER([alarm]) LIKE '%RUN%'
                 AND [occurred] >= DATEADD(day, -3, GETDATE())
         ),
-        MasterTarget AS (
-            SELECT
-                [mc_no],
-                [part_no],
-                [target_ct],
-                [target_utl],
-                [target_yield],
-                [target_special],
-	            [ring_factor],
-                ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
-            FROM ${DATABASE_MASTER}
-        ),
         PivotedAlarms AS (
             -- CTE ใหม่สำหรับ Pivot ข้อมูล: เปลี่ยน alarm จากแถวเป็นคอลัมน์
             SELECT
@@ -73,18 +61,9 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
             ISNULL(a.alarm_front, 'no data') AS alarm_front,
             a.occurred_front,
             ISNULL(a.alarm_rear, 'no data') AS alarm_rear,
-            a.occurred_rear,
-            ISNULL(m.[part_no], 0) AS [part_no],
-            ISNULL(m.[target_ct], 0) AS [target_ct],
-            ISNULL(m.[target_utl], 0) AS [target_utl],
-            ISNULL(m.[target_yield], 0) AS [target_yield],
-            ISNULL(m.[target_special], 0) AS [target_special],
-	        ISNULL(m.[ring_factor], 0) AS [ring_factor]
+            a.occurred_rear
         FROM LatestProduction p
         LEFT JOIN PivotedAlarms a ON p.[mc_no] = a.[mc_no]
-        LEFT JOIN MasterTarget m
-            ON p.[mc_no] = m.[mc_no]
-            AND m.rn = 1
         WHERE p.rn = 1
         ORDER BY p.[mc_no];
       `

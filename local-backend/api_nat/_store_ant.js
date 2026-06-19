@@ -42,8 +42,29 @@ const runningTimeCache = createRunningTimeCache({
   },
 });
 
+const master = async() => {
+    const m = await dbms.query(`
+      WITH [master] AS (
+          SELECT
+              [mc_no],
+              [part_no],
+              [target_ct],
+              [target_utl],
+              [target_yield],
+              [target_special],
+            [ring_factor],
+              ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
+          FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+      )
+      SELECT * FROM [master]
+      WHERE rn = 1
+  `)
+  return m[0]
+}
+
 module.exports = {
   getSnapshot: store.getSnapshot,
   getRawMap: store.getRawMap,
   getRunningTime: () => runningTimeCache.get(),
+  master
 };
