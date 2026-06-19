@@ -1284,7 +1284,8 @@ WITH [mbrf] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
 	FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
 	WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -1295,17 +1296,18 @@ WITH [mbrf] AS (
 		,mbrf.[process]
 		,mbrf.[mc_no]
 		,Null AS [count_mc_no]
-		,ct.[target_ct]
+		,mt.[target_ct]
 		,mbrf.[total_gauge] AS [prod_utl]
-		,ct.[target_special]
+		,mt.[target_special]
 		,([daily_ok] + [pallet_ng] + [turn_table_ng] + [retainer_ng]) AS [total_prod]
-		,([daily_ok] - ct.[target_special]) AS [diff]
+		,([daily_ok] - mt.[target_special]) AS [diff]
 		,[daily_ok]
 	FROM [mbrf]
 	LEFT JOIN [mbr] 
 	ON mbrf.[work_date] = mbr.[work_date] AND mbrf.[mc_no] = mbr.[mc_no]
-	LEFT JOIN [master] ct
-	ON mbrf.[mc_no] = ct.[mc_no]
+	LEFT JOIN [master] mt
+	ON mbrf.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -1446,7 +1448,8 @@ WITH [arp] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -1465,6 +1468,7 @@ WITH [arp] AS (
 	FROM [arp] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -1605,7 +1609,8 @@ WITH [gssm] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -1625,6 +1630,7 @@ WITH [gssm] AS (
 	FROM [gssm] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -1765,7 +1771,8 @@ WITH [fim] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -1784,6 +1791,7 @@ WITH [fim] AS (
 	FROM [fim] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -1914,7 +1922,7 @@ WITH [antr] AS (
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date]
-        ,[mc_no]
+        ,LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2) AS [mc_no]
         ,[ok_rear] AS [daily_ok]
         ,([ok_rear] + [ag_rear] + [ng_rear] + [mixball_rear]) AS [total_prod]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
@@ -1930,7 +1938,7 @@ WITH [antr] AS (
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date]
-        ,[mc_no]
+        ,LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2) AS [mc_no]
         ,[ok_front] AS [daily_ok]
         ,([ok_front] + [ag_front] + [ng_front] + [mixball_front]) AS [total_prod]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
@@ -1939,7 +1947,8 @@ WITH [antr] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -1948,7 +1957,7 @@ WITH [antr] AS (
 	SELECT
 		prod.[work_date]
 		,prod.[process]
-		,LEFT(prod.[mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT(prod.[mc_no], 2)) + (CONVERT(INT, RIGHT(prod.[mc_no], 2)) - 1)),2) AS [mc_no]
+		,prod.[mc_no]
 		,Null AS [count_mc_no]
 		,mt.[target_ct]
 		,mt.[target_special]
@@ -1958,11 +1967,12 @@ WITH [antr] AS (
 	FROM [antr] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 	UNION
 	SELECT
 		prod.[work_date]
 		,prod.[process]
-		,LEFT(prod.[mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT(prod.[mc_no], 2)) * 2)),2) AS [mc_no]
+		,prod.[mc_no]
 		,Null AS [count_mc_no]
 		,mt.[target_ct]
 		,mt.[target_special]
@@ -1972,6 +1982,7 @@ WITH [antr] AS (
 	FROM [antf] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -2111,7 +2122,8 @@ WITH [aod] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -2130,6 +2142,7 @@ WITH [aod] AS (
 	FROM [aod] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 
@@ -2269,7 +2282,8 @@ WITH [aod] AS (
     AND DATEPART(HOUR, [registered]) IN (6)
 ),
 [master] AS (
-	SELECT [mc_no], [target_special], [target_ct] 
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
     WHERE [registered] >= @NearestMonth 
 	  AND [registered] <= EOMONTH(@NearestMonth)
@@ -2288,6 +2302,7 @@ WITH [aod] AS (
 	FROM [aod] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
 ),
 [daily] AS (
 	SELECT 

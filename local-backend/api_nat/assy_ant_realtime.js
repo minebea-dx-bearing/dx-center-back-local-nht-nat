@@ -19,10 +19,12 @@ const store = require("./_store_ant");
 
 const startTime = 6;
 
-const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
+const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => {
   // console.log(currentMachineData)
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
   const new_currentMachineData = {}
+  
+  
   Object.values(currentMachineData).map((item) => {
     // set mc_no into 2 no. -> mc_no for rear = odd no.
     //                      -> mc_no for front = even no.
@@ -31,20 +33,20 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const calc_mc_no = mc+(mc-1)
     const mc_no_front = item.mc_no.slice(0,3) + String(mc*2).padStart(2, '0')
     const mc_no_rear = item.mc_no.slice(0,3) + String(calc_mc_no).padStart(2, '0')
-
+    
     const data_front = {...item, mc_no: mc_no_front, alarm: item.alarm_front, occurred: item.occurred_front}
     const data_rear = {...item, mc_no: mc_no_rear, alarm: item.alarm_rear, occurred: item.occurred_rear}
-
+    
     new_currentMachineData[mc_no_rear] = data_rear
     new_currentMachineData[mc_no_front] = data_front
   })
-
+  
   let curr_mc_no = Object.keys(new_currentMachineData); 
   for(let i=1; i<13; i++){
     const target = `ant${i.toString().padStart(2, '0')}`;
     if(!curr_mc_no.includes(target)){
         new_currentMachineData[target] = {
-            process: "ant",
+          process: "ant",
             mc_no: target,
             part_no: "no setup",
             ok_front: 0,
@@ -63,10 +65,42 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
             target_yield: 0,
             target_special: 0,
             ring_factor: 0
-        }
+          }
     }
   }
 
+  const antMaster = await store.master(); 
+  // console.log(antMaster)
+  Object.keys(new_currentMachineData).forEach((key) => {
+    const item = new_currentMachineData[key];
+
+    // 1. ค้นหาข้อมูลจาก antMaster ที่ mc_no ตรงกัน
+    const masterArray = antMaster.filter((i) => i.mc_no === item.mc_no.toUpperCase());
+    const targetMaster = masterArray[0];
+
+    // 2. ถ้าเจอข้อมูลใน antMaster ให้ทำการรวมร่าง (Merge) ข้อมูลเข้าไป
+    if (targetMaster) {
+      new_currentMachineData[key] = {
+        ...item,
+        ...targetMaster,
+        mc_no: item.mc_no
+      };
+    }
+    else {
+      new_currentMachineData[key] = {
+        ...item,
+        part_no: "no setup",
+        target_ct: 0,
+        target_utl: 0,
+        target_yield: 0,
+        target_special: 0,
+        ring_factor: 0,
+        mc_no: item.mc_no
+      };
+    }
+  });
+  // console.log(new_currentMachineData);
+  
   return Object.values(new_currentMachineData).map((item) => {
     // console.log(item)
     const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
