@@ -55,7 +55,6 @@ const summarize = (dataArray, fields) => {
   };
 };
 
-
 const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary }) => {
   const fields = summary ? SUMMARY_FIELDS[summary] : null;
   if (summary && !fields) throw new Error(`makeMachinesHandler: unknown summary "${summary}"`);

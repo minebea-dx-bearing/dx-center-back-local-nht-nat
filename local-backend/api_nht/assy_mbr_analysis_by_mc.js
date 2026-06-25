@@ -170,7 +170,7 @@ router.get("/master_machine", async (req, res) => {
         ORDER BY mc_no ASC
       `
     );
-    console.log(master);
+    // console.log(master);
 
     res.json({ data: master[0], success: true, message: "ok" });
   } catch (error) {
@@ -292,8 +292,8 @@ router.get("/status/:mc_no/:date", async (req, res) => {
 
     let data = await dbms.query(
       `
-          DECLARE @start_date DATETIME = '${date} 07:00';
-          DECLARE @TargetEndDate DATETIME = '${dateTomarrow} 07:00';
+          DECLARE @start_date DATETIME = '${date} 06:00';
+          DECLARE @TargetEndDate DATETIME = '${dateTomarrow} 06:00';
           DECLARE @end_date DATETIME = CASE
           WHEN @TargetEndDate > GETDATE()
           THEN GETDATE()
@@ -783,7 +783,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
           acc[status_alarm].duration += duration_seconds;
           return acc;
         }, {})
-      ).map((item, index) => ({
+      ).sort((a, b) => b.duration - a.duration).map((item, index) => ({
         no: index + 1,
         color: item.color,
         alarm: item.alarm,

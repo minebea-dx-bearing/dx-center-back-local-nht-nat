@@ -749,7 +749,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
           acc[status_alarm].duration += duration_seconds;
           return acc;
         }, {})
-      ).map((item, index) => ({
+      ).sort((a, b) => b.duration - a.duration).map((item, index) => ({
         no: index + 1,
         color: item.color,
         alarm: item.alarm,
