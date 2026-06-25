@@ -62,10 +62,11 @@ app.use("/nat/assy/alu-sum-alarm", require("./api_nat/assy_alu_sum_alarm"));
 app.use("/nat/assy/combine-realtime", require("./api_nat/assy_combine_realtime"));
 app.use("/nat/assy/mbr-analysis-by-mc", require("./api_nat/assy_mbr_analysis_by_mc"));
 app.use("/nat/assy/arp-analysis-by-mc", require("./api_nat/assy_arp_analysis_by_mc"));
+app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 app.use("/nat/assy/fim-analysis-by-mc", require("./api_nat/assy_fim_analysis_by_mc"));
+app.use("/nat/assy/ant-analysis-by-mc", require("./api_nat/assy_ant_analysis_by_mc"));
 app.use("/nat/assy/avs-analysis-by-mc", require("./api_nat/assy_avs_analysis_by_mc"));
 app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_mc"));
-app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 
 app.use("/nat/assy/report", require("./api_nat/assy_report"));
 app.use("/nat/monitor", require("./api_nat/monitor"));
