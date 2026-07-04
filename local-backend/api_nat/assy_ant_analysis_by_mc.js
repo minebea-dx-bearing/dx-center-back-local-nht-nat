@@ -228,6 +228,11 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
       }
 
+      let yieldData = [];
+      for (let i = 0; i < arrayData_yield.length; i++) {
+        await yieldData.push(Number(arrayData_yield[i].yield.toFixed(2)));
+      }
+      
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
       const defaultHours = [
         "07:00",
@@ -272,6 +277,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
       res.json({
         data: calData,
+        yield: yieldData,
         data_raw: data[0],
         data_date: finalDate,
         success: true,
@@ -316,12 +322,9 @@ router.get("/status/:mc_no/:date", async (req, res) => {
                   WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
                   ELSE [alarm]
               END AS [status_alarm],
-              CASE
-                  WHEN RIGHT([alarm], 1) = '_' THEN 'after'
-                  ELSE 'before'
-              END AS [alarm_type]
+              CASE WHEN RIGHT([alarm], 1) = '_' THEN 'after' ELSE 'before' END AS [alarm_type]
           FROM ${DATABASE_ALARM}
-          WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 ${alarm_condition}
+          WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND alarm NOT LIKE 'YIELD RATE LOW%' ${alarm_condition}
       ),
       [with_pairing] AS (
           -- จับคู่ alarm กับ alarm_ --
@@ -334,10 +337,40 @@ router.get("/status/:mc_no/:date", async (req, res) => {
           -- filter เฉพาะตัวที่มี alarm , alarm_ และ check ตัว alarm ที่เกิดซ้อนอยู่ใน alarm อีกตัว --
           SELECT
               [mc_no],
-              [status_alarm],
+              IIF([status_alarm] LIKE 'run%', 'run', [status_alarm]) AS [status_alarm],
               [occurred] AS [occurred_start],
               [occurred_next] AS [occurred_end]
           FROM [with_pairing]
+          WHERE [alarm_type] = 'before' AND [next_type] = 'after'
+      ),
+      [yield_low] AS (
+        SELECT 
+          [mc_no],
+          [occurred],
+          [alarm],
+          CASE
+            WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
+            ELSE [alarm]
+          END AS [status_alarm],
+          CASE WHEN RIGHT([alarm], 1) = '_' THEN 'after' ELSE 'before' END AS [alarm_type]
+        FROM ${DATABASE_ALARM}
+        WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND alarm LIKE 'YIELD RATE LOW%' AND alarm LIKE '%FRONT%'
+      ),
+      [with_pairing_yield] AS (
+          -- จับคู่ alarm กับ alarm_ --
+          SELECT *,
+              ISNULL(LEAD([occurred]) OVER (PARTITION BY [mc_no], [status_alarm] ORDER BY [occurred]), @end_date) AS [occurred_next],
+              ISNULL(LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [status_alarm] ORDER BY [occurred]), 'after') AS [next_type]
+          FROM [yield_low]
+      ),
+      [paired_alarms_yield] AS (
+          -- filter เฉพาะตัวที่มี alarm , alarm_ และ check ตัว alarm ที่เกิดซ้อนอยู่ใน alarm อีกตัว --
+          SELECT
+              [mc_no],
+              [status_alarm],
+              [occurred] AS [occurred_start],
+              [occurred_next] AS [occurred_end]
+          FROM [with_pairing_yield]
           WHERE [alarm_type] = 'before' AND [next_type] = 'after'
       ),
       [base_monitor_iot] AS (
@@ -407,11 +440,53 @@ router.get("/status/:mc_no/:date", async (req, res) => {
               [status_alarm],
               [occurred_start],
               [occurred_end],
-              CASE
-                  WHEN [max_prev_end] IS NOT NULL AND [occurred_end] <= [max_prev_end] THEN 1
-                  ELSE 0
-              END AS [duplicate]
+              CASE WHEN [max_prev_end] IS NOT NULL AND [occurred_end] <= [max_prev_end] THEN 1 ELSE 0 END AS [duplicate]
           FROM [with_max_prev]
+      ),
+      [rm_dup] AS (
+        SELECT
+          [mc_no],
+          [status_alarm],
+          [occurred_start],
+          [occurred_end],
+          LAG([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [prev_start],
+          LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [prev_end]
+        FROM [check_duplicate]
+        WHERE [duplicate] = 0
+      ),
+      [get_yield_alarm] AS (
+        -- เอา YIELD RATE LOW ที่เกิดระหว่าง alarm ก่อนหน้าและหลังมา และต้องจบหลังจากเวลา alarm ก่อนหน้าจบ
+        SELECT 
+          t2.[mc_no],
+          t2.[status_alarm],
+          t2.[occurred_start],
+          t2.[occurred_end],
+          t1.[status_alarm] AS [t1_alarm],
+          t1.[prev_start] ,
+          t1.[occurred_start] AS [t1_start],
+          t1.[prev_end],
+          t1.[occurred_end] AS [t1_end]
+        FROM [paired_alarms_yield] t2
+        INNER JOIN [rm_dup] t1 
+          ON t2.[mc_no] = t1.[mc_no]
+        AND t1.[occurred_start] > t1.[prev_end]
+        AND t2.[occurred_start] BETWEEN t1.[prev_start] AND t1.[occurred_start]
+        AND t2.[occurred_end] > t1.[prev_end]
+      ),
+      [merge] AS (
+        SELECT 
+          [mc_no],
+          [status_alarm],
+          [occurred_start],
+          [occurred_end]
+        FROM [rm_dup]
+        UNION
+        SELECT
+          [mc_no],
+          [status_alarm],
+          [occurred_start],
+          [occurred_end]
+        FROM [get_yield_alarm]
       ),
       [clamped_alarms] AS (
           -- ตัดตัวที่เป็น alarm ซ้อนใน alarm อีกตัวออกและเพิ่มเวลาก่อนและหลังเพื่อคำนวณ --
@@ -420,25 +495,35 @@ router.get("/status/:mc_no/:date", async (req, res) => {
               [status_alarm],
               [occurred_start],
               [occurred_end],
-              LAG([status_alarm]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]) AS [previous_alarm],
-              LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]) AS [previous_occurred],
-              DATEDIFF(SECOND, LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_end]), [occurred_start]) AS [previous_gap_seconds],
-              LEAD([status_alarm]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_alarm],
-              LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_occurred],
-              DATEDIFF(SECOND, [occurred_end], LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start])) AS [next_gap_seconds]
-          FROM [check_duplicate]
-          WHERE [duplicate] = 0
+          LAG([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [previous_end],
+              LEAD([occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_start],
+              LEAD([occurred_end]) OVER (PARTITION BY [mc_no] ORDER BY [occurred_start]) AS [next_end]
+          FROM [merge]
       ),
       [edit_occurred] AS (
           -- filter เอาเฉพาะเวลาที่ต้องการ , ถ้า alarm = mc_run แล้วเวลาซ้อนกับ alarm ตัวอื่นจะตัดเวลา alarm ตัวนั้นออก , ถ้าเป็น alarm1 เหลื่อม alarm2 จะตัดเวลา alarm1 ออกตามที่เหลื่อม --
           SELECT
               *,
               CASE
-                  WHEN [previous_gap_seconds] < 0 AND [previous_alarm] = 'mc_run' THEN [previous_occurred]
-                  WHEN [previous_gap_seconds] < 0 THEN [previous_occurred]
+                  WHEN [occurred_start] < [previous_end] AND [previous_end] < [occurred_end] THEN [previous_end]
                   ELSE [occurred_start]
-              END AS [new_occurred_start]
+              END AS [new_occurred_start],
+          CASE
+                  WHEN [occurred_end] < [next_end] OR [next_end] IS NULL THEN [occurred_end]
+                  ELSE [next_start]
+              END AS [new_occurred_end]
           FROM [clamped_alarms]
+      ),
+      [final_raw_alarm] AS (
+        SELECT 
+          UPPER([mc_no]) AS [mc_no], 
+          IIF([status_alarm] LIKE 'YIELD RATE LOW%', 'RUN', UPPER([status_alarm])) AS [status_alarm], 
+          [new_occurred_start] AS [occurred_start], 
+          [new_occurred_end] AS [occurred_end],
+          LEAD([new_occurred_start]) OVER (PARTITION BY [mc_no] ORDER BY [new_occurred_start]) AS [next_start],
+          ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [new_occurred_start]) AS [rn_start],
+          ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [new_occurred_end] desc) AS [rn_end]
+        FROM [edit_occurred]
       ),
       [insert_stop] AS (
           -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
@@ -446,39 +531,33 @@ router.get("/status/:mc_no/:date", async (req, res) => {
               [mc_no],
               'STOP' AS [status_alarm],
               [occurred_end] AS [occurred_start],
-              [next_occurred] AS [occurred_end]
-          FROM [edit_occurred]
-          WHERE [next_gap_seconds] > 0
-      ),
-      [insert_stop_end] AS (
+              [next_start] AS [occurred_end]
+          FROM [final_raw_alarm]
+          WHERE [next_start] > [occurred_end]
+        UNION ALL
           -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
           SELECT
               [mc_no],
               'STOP' AS [status_alarm],
               [occurred_end] AS [occurred_start],
               @end_date AS [occurred_end]
-          FROM [edit_occurred]
-          WHERE [next_gap_seconds] IS NULL
-      ),
-      [insert_stop_start] AS (
+          FROM [final_raw_alarm]
+          WHERE [occurred_end] < @TargetEndDate AND [rn_end] = 1
+        UNION ALL
           -- เพิ่มเวลา STOP เข้าไปแทนที่ช่วงเวลาที่ไม่มี alarm --
           SELECT
               [mc_no],
               'STOP' AS [status_alarm],
               @start_date AS [occurred_start],
-              [new_occurred_start] AS [occurred_end]
-          FROM [edit_occurred]
-          WHERE [previous_gap_seconds] IS NULL
+              [next_start] AS [occurred_end]
+          FROM [final_raw_alarm]
+          WHERE [occurred_start] > @start_date AND [rn_start] = 1
       ),
       [combine_result] AS (
           -- รวม alarm ทั้งหมดกับ STOP เข้าด้วยกัน --
-          SELECT UPPER([mc_no]) AS [mc_no], UPPER([status_alarm]) AS [status_alarm], [new_occurred_start] AS [occurred_start], [occurred_end] FROM [edit_occurred]
+          SELECT UPPER([mc_no]) AS [mc_no], UPPER([status_alarm]) AS [status_alarm], [occurred_start], [occurred_end] FROM [final_raw_alarm]
           UNION ALL
           SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop]
-          UNION ALL
-          SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_end]
-          UNION ALL
-          SELECT UPPER([mc_no]) AS [mc_no], [status_alarm], [occurred_start], [occurred_end] FROM [insert_stop_start]
       ),
       [edit_time_result] AS (
           -- ปัดเวลาให้เท่ากับเวลาที่ต้องการ --
@@ -498,8 +577,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
       [filter_result] AS (
           -- หลังปัดเวลาเสร็จ filter เอาข้อมูลที่เวลาผิดทิ้ง --
           SELECT * FROM [edit_time_result]
-          WHERE
-              [occurred_end] > [occurred_start]
+          WHERE [occurred_end] > [occurred_start]
       )
       SELECT
         '${mc_no}' AS [mc_no],
@@ -508,7 +586,7 @@ router.get("/status/:mc_no/:date", async (req, res) => {
         [occurred_end],
         DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
       FROM [filter_result]
-      WHERE [mc_no] = '${calc_mc_no}'
+      WHERE [mc_no] = '${calc_mc_no}' AND DATEDIFF(SECOND, [occurred_start], [occurred_end]) <> 0
       ORDER BY [mc_no], [occurred_start]
     `);
     const colorMap = {};

@@ -185,7 +185,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               ${COLUMN_CT} AS [cycle_t],
               CASE 
                     WHEN ${COLUMN_TOTAL} = 0 THEN 0
-                    ELSE cast((${COLUMN_OK} * 1.0 / ${COLUMN_TOTAL}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
+                    ELSE cast(((${COLUMN_OK}) * 1.0 / ${COLUMN_TOTAL}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
               END AS yield,
               FORMAT(registered, 'HH:mm') AS cat_time
           FROM ${DATABASE_PROD}
@@ -206,9 +206,13 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
       }
 
+      let yieldData = [];
+      for (let i = 0; i < arrayData_yield.length; i++) {
+        await yieldData.push(Number(arrayData_yield[i].yield.toFixed(2)));
+      }
+      
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
       const defaultHours = [
-        "07:00",
         "08:00",
         "09:00",
         "10:00",
@@ -232,6 +236,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         "04:00",
         "05:00",
         "06:00",
+        "07:00",
       ];
       const dataMap = {};
       data[0].forEach((item) => {
@@ -250,6 +255,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
       res.json({
         data: calData,
+        yield: yieldData,
         data_raw: data[0],
         data_date: finalDate,
         success: true,
