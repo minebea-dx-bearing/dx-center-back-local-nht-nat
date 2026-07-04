@@ -208,7 +208,6 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
       const defaultHours = [
-        "07:00",
         "08:00",
         "09:00",
         "10:00",
@@ -232,6 +231,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         "04:00",
         "05:00",
         "06:00",
+        "07:00",
       ];
       const dataMap = {};
       data[0].forEach((item) => {
