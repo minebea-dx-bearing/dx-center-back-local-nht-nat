@@ -70,6 +70,7 @@ app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_
 
 app.use("/nat/assy/report", require("./api_nat/assy_report"));
 app.use("/nat/monitor", require("./api_nat/monitor"));
+app.use("/NAT_GD2_Data", require("./api_nat/gd_2nd_data"));
 
 app.use("/NATBallNg", require("./api_nat/assy_ballNg"));
 
