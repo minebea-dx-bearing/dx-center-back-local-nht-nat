@@ -37,19 +37,19 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const diff_prod = s_act_pd - f_target_pd;
     const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
-
-    const yield_rate = Number(((s_act_pd / (s_act_pd + ng_pd)) * 100 || 0).toFixed(2));
-
-    const f_diff_pd = item.ok_grs - f_target_pd;
-    const s_diff_pd = item.ok - f_target_pd;
 
     const f_ng_pd = item.ng_ro1 + item.ng_ro2_grs + item.ng_grs;
     const s_ng_pd = item.ng_a_shield + item.ng_a_snap + item.ng_b_shield + item.ng_b_snap;
+    
+    const f_total_pd = item.ok_grs + f_ng_pd;
+    const s_total_pd = item.ok + s_ng_pd;
+    
+    const f_diff_pd = item.ok_grs - f_target_pd;
+    const s_diff_pd = item.ok - f_target_pd;
 
-    const f_curr_yield = Number(((item.ok_grs / (item.ok_grs + f_ng_pd)) * 100 || 0).toFixed(2));
-    const s_curr_yield = Number(((item.ok / (item.ok + s_ng_pd)) * 100 || 0).toFixed(2));
+    const f_curr_yield = Number(((item.ok_grs / f_total_pd) * 100 || 0).toFixed(2));
+    const s_curr_yield = Number(((item.ok / s_total_pd) * 100 || 0).toFixed(2));
 
     const denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
     const s_curr_utl = denom_utl > 0 ? Number((((s_act_pd + s_ng_pd) / denom_utl) * 100).toFixed(2)) || 0 : 0;
@@ -59,8 +59,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
     const denom_perf = s_target_ct > 0 && total_time - plan_shutdown > 0 ? (total_time - plan_shutdown) / s_target_ct : 0;
-    const performance_grease = denom_perf > 0 ? Number((((item.ok_grs + f_ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
-    const performance_shield = denom_perf > 0 ? Number((((item.ok + s_ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
+    const performance_grease = denom_perf > 0 ? Number(((f_total_pd / denom_perf) * 100).toFixed(2)) || 0 : 0;
+    const performance_shield = denom_perf > 0 ? Number(((s_total_pd / denom_perf) * 100).toFixed(2)) || 0 : 0;
 
     const oee_grease = Number(((performance_grease / 100) * (availability / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
     const oee_shield = Number(((performance_shield / 100) * (availability / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
@@ -74,9 +74,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_target_pd,
       s_target_pd: f_target_pd,
       f_act_pd: item.ok_grs || 0,
-      S_act_pd: item.ok,
+      f_total_pd,
       s_target_yield,
       f_diff_pd,
+      s_total_pd,
       s_diff_pd,
       s_act_pd,
       s_curr_yield,

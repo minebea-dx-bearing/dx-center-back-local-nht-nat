@@ -35,7 +35,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const f_diff_pd = f_act_pd - f_target_pd;
+    const f_total_pd = f_act_pd + f_ng_pd;
+    const f_diff_pd = f_total_pd - f_target_pd;
     const f_diff_ct = Number((f_act_ct - f_target_ct).toFixed(2));
 
     const f_curr_yield = Number(((f_act_pd / (f_act_pd + f_ng_pd)) * 100 || 0).toFixed(2));
@@ -60,6 +61,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_target_yield: item.target_yield || 0,
       target,
       f_target_pd,
+      f_total_pd,
       f_diff_pd,
       f_act_pd,
       f_act_ct,

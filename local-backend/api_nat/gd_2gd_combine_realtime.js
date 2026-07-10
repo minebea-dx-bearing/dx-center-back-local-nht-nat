@@ -187,7 +187,7 @@ router.get("/get_combined_data", async (req, res) => {
         line_no: mc.line,
         process: mc.process,
         prod: cached.data?.prod_total || 0,
-        prod_ng: (cached.data?.ng_p ?? 0) + (cached.data?.ng_n ?? 0) + (cached.data?.tng ?? 0),
+        prod_ng: (cached.data?.ng_p ?? 0) + (cached.data?.ng_n ?? 0) + (cached.data?.tng ?? 0) + (cached.data?.ng_plug ?? 0),
         alarm: mcAlarm || "-", // ดึงสถานะจาก mqtt status
         status: mcStatus || "-", // ดึงสถานะจาก mqtt status
         // cycletime: parseFloat(((mc.line === "H" ? cached.data?.cth2 : cached.data?.eachct || 0) / 100).toFixed(2)),

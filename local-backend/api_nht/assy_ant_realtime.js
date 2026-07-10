@@ -58,21 +58,24 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
-    const s_diff_pd = item.ok_front - f_target_pd;
-    const f_diff_pd = item.ok_rear - f_target_pd;
+    const s_ng_pd = item.ag_front + item.ng_front + item.mixball_front;
+    const f_ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
+
+    const f_total_pd = f_act_pd + f_ng_pd;
+    const s_total_pd = s_act_pd + s_ng_pd;
+
+    const s_diff_pd = f_total_pd - f_target_pd;
+    const f_diff_pd = s_total_pd - f_target_pd;
 
     const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
     const f_diff_ct = Number((f_act_ct - s_target_ct).toFixed(2));
 
-    const s_ng_pd = item.ag_front + item.ng_front + item.mixball_front;
-    const f_ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
-
-    const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
-    const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
+    const s_curr_yield = Number(((s_act_pd / s_total_pd) * 100 || 0).toFixed(2));
+    const f_curr_yield = Number(((f_act_pd / f_total_pd) * 100 || 0).toFixed(2));
 
     const denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
-    const s_curr_utl = denom_utl > 0 ? Number((((s_act_pd + s_ng_pd) / denom_utl) * 100).toFixed(2)) || 0 : 0;
-    const f_curr_utl = denom_utl > 0 ? Number((((f_act_pd + f_ng_pd) / denom_utl) * 100).toFixed(2)) || 0 : 0;
+    const s_curr_utl = denom_utl > 0 ? Number(((s_total_pd / denom_utl) * 100).toFixed(2)) || 0 : 0;
+    const f_curr_utl = denom_utl > 0 ? Number(((f_total_pd / denom_utl) * 100).toFixed(2)) || 0 : 0;
 
     const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
@@ -100,6 +103,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       prod_ok,
       f_target_pd,
       f_act_pd,
+      f_total_pd,
       f_diff_pd,
       f_act_ct,
       f_diff_ct,
@@ -109,6 +113,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_target_utl: s_target_utl,
       f_status_alarm,
       s_target_pd: f_target_pd,
+      s_total_pd,
       s_act_pd,
       s_diff_pd,
       s_target_ct,
