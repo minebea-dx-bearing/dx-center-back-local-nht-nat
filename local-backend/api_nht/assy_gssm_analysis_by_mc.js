@@ -208,23 +208,32 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
     );
 
     if (data[0].length > 0) {
-      arrayData = data[0];
-      arrayData_yield = data[0];
-      let calData = [];
-      const index_data = arrayData[0].daily_total;
-      await calData.push(index_data);
-
-      for (let i = 0; i < arrayData.length - 1; i++) {
-        await calData.push(
-          arrayData[i + 1].daily_total - arrayData[i].daily_total < 0
-            ? 0
-            : arrayData[i + 1].daily_total - arrayData[i].daily_total
-        );
-      }
-
+      const arrayData = data[0];
       let yieldData = [];
-      for (let i = 0; i < arrayData_yield.length; i++) {
-        await yieldData.push(Number(arrayData_yield[i].yield.toFixed(2)));
+      let calDataTotal = [];
+
+      for (let i = 0; i < arrayData.length; i++) {
+        // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
+        if (i === 0) {
+          calDataTotal.push(arrayData[i].daily_total);
+          const initialYield = arrayData[i].daily_total === 0 ? 0 : (arrayData[i].daily_ok / arrayData[i].daily_total) * 100;
+          yieldData.push(Number(initialYield.toFixed(2)));
+          continue; // ข้ามไปรอบถัดไปเลย
+        }
+
+        // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
+        let calTotal = arrayData[i].daily_total - arrayData[i - 1].daily_total;
+        let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
+
+        // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
+        if (calTotal < 0) calTotal = arrayData[i].daily_total;
+        if (calOk < 0) calOk = arrayData[i].daily_ok;
+
+        calDataTotal.push(calTotal);
+        
+        // ดักจับหารด้วย 0 กันระบบระเบิด (NaN)
+        const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
+        yieldData.push(Number(currentYield.toFixed(2)));
       }
       
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
@@ -270,7 +279,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       });
 
       res.json({
-        data: calData,
+        data: calDataTotal,
         yield: yieldData,
         data_raw: data[0],
         data_date: finalDate,

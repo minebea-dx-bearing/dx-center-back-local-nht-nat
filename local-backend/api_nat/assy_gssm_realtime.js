@@ -60,25 +60,24 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const diff_prod = s_act_pd - f_target_pd;
     const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
 
     const yield_rate = Number(((s_act_pd / (s_act_pd + ng_pd)) * 100 || 0).toFixed(2));
 
-    const f_diff_pd = item.grease_ok - f_target_pd;
-    const s_diff_pd = item.shield_ok - f_target_pd;
-
     const f_ng_pd = item.ro1_ng + item.ro2_ng + item.grease_ng;
     const s_ng_pd = item.shield_a_ng + item.shield_b_ng + item.snap_a_ng + item.snap_b_ng;
+    
+    const f_total_pd = item.grease_ok + f_ng_pd;
+    const s_total_pd = item.shield_ok + s_ng_pd;
 
-    const grease_total = item.grease_ok + f_ng_pd;
-    const shield_total = item.shield_ok + s_ng_pd;
-    const f_curr_yield = grease_total > 0 ? Number(((item.grease_ok / grease_total) * 100).toFixed(2)) : 0;
-    const s_curr_yield = shield_total > 0 ? Number(((item.shield_ok / shield_total) * 100).toFixed(2)) : 0;
+    const f_diff_pd = f_total_pd - f_target_pd;
+    const s_diff_pd = s_total_pd - f_target_pd;
 
-    const yield_calc_total = shield_total > 0 ? Number(item.shield_ok / shield_total) : 0;
+    const f_curr_yield = f_total_pd > 0 ? Number(((item.grease_ok / f_total_pd) * 100).toFixed(2)) : 0;
+    const s_curr_yield = s_total_pd > 0 ? Number(((item.shield_ok / s_total_pd) * 100).toFixed(2)) : 0;
 
-    const s_total_pd = s_act_pd + s_ng_pd;
+    const yield_calc_total = s_total_pd > 0 ? Number(item.shield_ok / s_total_pd) : 0;
+
     const s_denom_utl = s_target_ct > 0 ? (elapsedSec * item.ring_factor) / s_target_ct : 0;
     const s_curr_utl = s_denom_utl > 0 ? Number(((s_total_pd / s_denom_utl) * 100).toFixed(2)) : 0;
 
@@ -107,11 +106,13 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       f_act_pd: item.grease_ok,
       s_act_pd: item.shield_ok,
       s_target_yield,
+      f_total_pd,
       f_diff_pd,
       s_diff_pd,
       s_act_pd,
       s_curr_yield,
       s_target_ct,
+      s_total_pd,
       s_act_ct,
       s_diff_ct,
       s_target_utl,

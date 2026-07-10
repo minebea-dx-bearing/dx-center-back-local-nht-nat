@@ -38,16 +38,16 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
     const target_ct = item.target_ct || 0;
     const target_utl = item.target_utl || 0;
 
-    const act_pd = item.prod_total || 0;
-    const ng_pd = (item.ng_p || 0) + (item.ng_n || 0);
+    const total_pd = item.prod_total || 0;
+    const ng_pd = (item.ng_p || 0) + (item.ng_n || 0) + (item.tng || 0) + (item.ng_plug || 0);
+    const act_pd = total_pd - ng_pd;
     const act_ct = item.eachct / 100 || 0;
 
     const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const diff_pd = act_pd - target_pd;
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
-
-    const total_pd = act_pd + ng_pd;
+    
+    const diff_pd = total_pd - target_pd;
     const curr_yield = Number((item.yield_ok / 10).toFixed(2));
 
     const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;
@@ -76,6 +76,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
       status_alarm,
       target,
       target_pd,
+      total_pd,
       act_pd,
       diff_pd,
       act_ct,

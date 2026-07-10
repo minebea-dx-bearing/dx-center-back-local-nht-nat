@@ -62,10 +62,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const diff_pd = act_pd - target_pd;
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
-
+    
     const total_pd = act_pd + ng_pd;
+    const diff_pd = total_pd - target_pd;
     const curr_yield = total_pd > 0 ? Number(((act_pd / total_pd) * 100).toFixed(2)) : 0;
 
     const yield_calc_total = total_pd > 0 ? Number(act_pd / total_pd) : 0;
@@ -95,6 +95,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       status_alarm,
       target,
       target_pd,
+      total_pd,
       act_pd,
       diff_pd,
       act_ct,
@@ -121,18 +122,18 @@ router.get("/machines", async (req, res) => {
     const summary = dataArray.reduce(
       (acc, item) => {
         acc.total_target += item.target_actual || 0;
-        acc.total_ok += item.prod_ok || 0;
+        acc.total_pd += item.total_pd || 0;
         acc.total_cycle_t += item.cycle_t || 0;
         acc.total_opn += item.opn || 0;
         acc.count += 1;
         return acc;
       },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 },
+      { total_target: 0, total_pd: 0, total_cycle_t: 0, total_opn: 0, count: 0 },
     );
 
     const resultSummary = {
       sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
+      sum_daily: summary.total_pd,
       avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
       avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
     };
