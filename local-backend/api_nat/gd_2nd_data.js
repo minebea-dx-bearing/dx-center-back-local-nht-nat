@@ -45,27 +45,58 @@ router.get("/getData/:startQuery/:endQuery", async (req, res) => {
             )
             SELECT ct.*, utl.[avgutl]
             FROM [max_ct] ct
-            LEFT JOIN [calc_utl] utl ON ct.mc_no = utl.mc_no
+            LEFT JOIN [calc_utl] utl ON ct.mc_no = utl.mc_no AND ct.work_date = utl.work_date
             ORDER BY mc_no, work_date
         `);
 
         if (response[1] > 0) {
             let data = response[0];
-            let avgCtIR = []
-            let avgCtOR = []
-            let avgUtl = []
-            data.map((i) => {
-                i.mc_type === "ir" ? avgCtIR.push(i.avgct) : avgCtOR.push(i.avgct)
-                avgUtl.push(i.avgutl)
-            })
-            const calcAvg = (arr) => arr.length === 0 ? 0 : Number(arr.reduce((acc, val) => acc + val, 0) / arr.length).toFixed(2);
-            
+
+            const groupedData = data.reduce((acc, item) => {
+                const key = `${item.work_date}_${item.mc_type}`;
+
+                // 2. ถ้ายังไม่เคยมี Key นี้ใน Object ผลลัพธ์ (acc) ให้สร้างโครงสร้างเริ่มต้นไว้ก่อน
+                if (!acc[key]) {
+                    acc[key] = {
+                        work_date: item.work_date,
+                        mc_type: item.mc_type,
+                        ct: [],
+                        utl: []
+                    };
+                }
+
+                acc[key].ct.push(item.avgct);
+                acc[key].utl.push(item.avgutl);
+
+                return acc;
+            }, {});
+
+            Object.keys(groupedData).forEach((key) => {
+                const ctArray = groupedData[key].ct;
+                const utlArray = groupedData[key].utl;
+                
+                const sumCt = ctArray.reduce((sum, currentCt) => sum + currentCt, 0);
+                const sumUtl = utlArray.reduce((sum, currentUtl) => sum + currentUtl, 0);
+                
+                const avgCt = Number((sumCt / ctArray.length).toFixed(2));
+                const avgUtl = Number((sumUtl / utlArray.length).toFixed(2));
+
+                // 3. ยัดฟิลด์ avg ใหม่เข้าไปในบ้านหลังเดิม
+                groupedData[key].avgCt = avgCt;
+                groupedData[key].avgUtl = avgUtl;
+            });
+
+            // const calcAvg = (arr) => arr.length === 0 ? 0 : Number(arr.reduce((acc, val) => acc + val, 0) / arr.length).toFixed(2);
+            const finalArray = Object.keys(groupedData).map((key) => {
+                return {
+                    ...groupedData[key] // เทข้อมูล date, age, avg ตามลงไป
+                };
+            });
+
             res.json({
                 success: true,
                 data,
-                avgCtIR: calcAvg(avgCtIR),
-                avgCtOR: calcAvg(avgCtOR),
-                avgUtl: calcAvg(avgUtl),
+                avgData: finalArray
             });
         } else {
             res.json({
