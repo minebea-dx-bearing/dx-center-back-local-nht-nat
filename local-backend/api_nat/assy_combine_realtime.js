@@ -16,25 +16,26 @@ router.get("/", async (req, res) => {
   const dataARP = prepareARP(machineDataARP(), await currentARP());
   const dataGSSM = prepareGSSM(machineDataGSSM(), await currentGSSM());
   const dataFIM = prepareFIM(machineDataFIM(), await currentFIM());
-  const dataANT = prepareANT(machineDataANT(), await currentANT());
+  const dataANT = await prepareANT(machineDataANT(), await currentANT());
   const dataAOD = prepareAOD(machineDataAOD(), await currentAOD());
   const dataAVS = prepareAVS(machineDataAVS(), await currentAVS());
   const dataALU = prepareALU(machineDataALU(), await currentALU());
 
   const combinedData = [...dataMBRF, ...dataMBR, ...dataARP, ...dataGSSM, ...dataFIM, ...dataANT, ...dataAOD, ...dataAVS, ...dataALU].map((item) => {
     let machineNumber = 0;
-    if (item.mc_no.includes("ANT")) {
-      machineNumber = parseInt(item.mc_no.slice(-2)) + (parseInt(item.mc_no.slice(-2)) - 1);
-    }else{
-      machineNumber = parseInt(item.mc_no.slice(-2));
-    }
-    const lineMaster = machineNumber === 1 || machineNumber === 3? `${item.process}-FIRST` : `${item.process}-SECOND`;
+    // if (item.mc_no.includes("ANT")) {
+    //   machineNumber = parseInt(item.mc_no.slice(-2)) + (parseInt(item.mc_no.slice(-2)) - 1);
+    // }else{
+    // }
+    machineNumber = parseInt(item.mc_no.slice(-2));
+    const lineMaster = machineNumber % 2 === 1 ? `${item.process}-FIRST` : `${item.process}-SECOND`;
     return {
       ...item,
       lineMaster,
       line: machineNumber,
     };
   });
+  // console.log(combinedData)
 
   const finalStructure = combinedData.reduce((acc, machine) => {
     // acc คือ object ที่เรากำลังสร้างขึ้น (accumulator)
@@ -58,6 +59,24 @@ router.get("/", async (req, res) => {
     // 4. return acc เพื่อใช้ในรอบถัดไป
     return acc;
   }, {}); // `{}` คือค่าเริ่มต้นของ accumulator (object ว่าง)
+
+  // const calcYield = Object.keys(finalStructure).map((item) => {
+  //   console.log(finalStructure[item])
+  //   const totals = {};
+  //   const innerData = finalStructure[item];
+  
+  //   Object.entries(innerData).forEach(([key, value]) => {
+  //       // แยกชื่อกลุ่มออกมาจากหลังขีด (เช่น "FIRST", "SECOND")
+  //       const suffix = key.split('-')[1]; 
+        
+  //       if (!totals[suffix]) totals[suffix] = 0;
+  //       totals[suffix] += value.p;
+  //   });
+  
+  //   console.log(totals); 
+  // })
+
+  // ผลลัพธ์: { FIRST: 24, SECOND: 44 }
 
   res.json({
     success: true,

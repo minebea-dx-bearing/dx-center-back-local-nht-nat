@@ -14,71 +14,92 @@ router.get("/get_combined_data", async (req, res) => {
     console.log("date today", moment().format("YYYY-MM-DD"));
 
     const mcRes = await dbNAT.query(`
-          WITH result AS (
+        WITH result AS (
             SELECT
                 UPPER(m.[mc_no]) AS mc_no,
                 LEFT (m.mc_no,
-                    LEN (m.mc_no) - 1) AS group_id,
-                RIGHT (m.mc_no,
-                    1) AS line,
-        UPPER([process]) AS process,
-        [part_no],
-        [target_ct],
-        [target_utl],
-        [target_yield],
-        [target_special],
-        [ring_factor],
-                ROW_NUMBER() OVER (PARTITION BY p.mc_no ORDER BY p.registered DESC) AS rn
-            FROM
-        [nat_mc_mcshop_2gd].[dbo].[DATA_MASTER_2GD] m
-                LEFT JOIN[nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD] p ON m.mc_no = p.mc_no
-            WHERE
-                format(iif (DATEPART (HOUR, p.[registered]) < 7, dateadd (day, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${moment().format(
-                  "YYYY-MM-DD"
-                )}')
+                LEN (m.mc_no) - 1) AS group_id,
+                m.line_no AS line,
+                UPPER([process]) AS process,
+                [part_no],
+                [target_ct],
+                [target_utl],
+                [target_yield],
+                [target_special],
+                [ring_factor],
+                ROW_NUMBER() OVER (PARTITION BY m.mc_no ORDER BY m.registered DESC) AS rn
+            FROM [nat_mc_mcshop_2gd].[dbo].[DATA_MASTER_2GD] m
+            LEFT JOIN [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD] p ON m.mc_no = p.mc_no
+            WHERE format(iif (DATEPART (HOUR, p.[registered]) < 7, dateadd (day, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${moment().format("YYYY-MM-DD")}'
+        )
         SELECT
             mc_no,
             UPPER(group_id) AS group_id,
             UPPER(line) AS line,
             part_no,
             [process],
-        [target_ct],
-        [target_utl],
-        [target_yield],
-        [target_special],
-        [ring_factor]
-        FROM
-            result
-        WHERE
-            rn = 1
-        ORDER BY
-            mc_no ASC
-
+            [target_ct],
+            [target_utl],
+            [target_yield],
+            [target_special],
+            [ring_factor]
+        FROM result
+        WHERE rn = 1
+        ORDER BY mc_no ASC
     `);
     const mcList = mcRes[0];
+    // console.log(mcList)
+
+    const latestStatus = await dbNAT.query(`
+        WITH [status] AS (
+          SELECT [registered]
+            ,[occurred]
+            ,[mc_status]
+            ,[mc_no]
+            ,[process]
+            ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
+          FROM [nat_mc_mcshop_2gd].[dbo].[DATA_MCSTATUS_2GD]
+          where [occurred] >= DATEADD(day, -3, GETDATE())
+        )
+        SELECT 
+          UPPER([mc_no]) AS [mc_no], 
+          [mc_status]
+        FROM [status] WHERE rn = 1
+        ORDER BY [mc_no]
+    `);
+
+    const latestAlarm = await dbNAT.query(`
+      WITH [status] AS (
+        SELECT [registered]
+          ,[occurred]
+          ,[alarm]
+          ,[mc_no]
+          ,[process]
+          ,ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
+        FROM [nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]
+        where [occurred] >= DATEADD(day, -3, GETDATE()) AND [alarm] LIKE '%RUN%'
+      )
+      SELECT 
+        UPPER([mc_no]) AS [mc_no], 
+        [alarm]
+      FROM [status] WHERE rn = 1
+      ORDER BY [mc_no]
+    `)
 
     const [mqttRows] = await dbNAT.query(`
-      WITH ranked_mqtt AS (
-          SELECT
-              UPPER(mc_no) AS mc_no,
-              registered,
-              TRY_CAST (TRY_CAST (broker AS float) AS int) AS broker,
-              TRY_CAST (TRY_CAST (modbus AS float) AS int) AS modbus,
-              mac_id,
-              ROW_NUMBER() OVER (PARTITION BY mc_no ORDER BY registered DESC) AS rn
-          FROM
-      [nat_mc_mcshop_2gd].[dbo].[MONITOR_IOT]
-          WHERE
-              registered > DATEADD (MINUTE, -35, GETDATE ()))
-      SELECT
-          *
-      FROM
-          ranked_mqtt
-      WHERE
-          rn <= 6
-      ORDER BY
-          mc_no
-
+        WITH ranked_mqtt AS (
+            SELECT
+                UPPER(mc_no) AS mc_no,
+                registered,
+                TRY_CAST (TRY_CAST (broker AS float) AS int) AS broker,
+                TRY_CAST (TRY_CAST (modbus AS float) AS int) AS modbus,
+                mac_id,
+                ROW_NUMBER() OVER (PARTITION BY mc_no ORDER BY registered DESC) AS rn
+            FROM [nat_mc_mcshop_2gd].[dbo].[MONITOR_IOT]
+            WHERE registered > DATEADD (MINUTE, -35, GETDATE ()))
+        SELECT * FROM ranked_mqtt
+        WHERE rn <= 6
+        ORDER BY mc_no
     `);
     const mqttMap = {};
 
@@ -89,7 +110,9 @@ router.get("/get_combined_data", async (req, res) => {
     }
 
     const results = {};
+    const select = []
     for (const mc of mcList) {
+      // let status = "";
       const mcBase = mc.mc_no.slice(0, -1);
       const type = mc.mc_no.slice(-1);
       if (!results[mcBase]) results[mcBase] = {};
@@ -104,7 +127,7 @@ router.get("/get_combined_data", async (req, res) => {
 
       const cached = realtimeCache[mc.mc_no.toLowerCase()] || {};
       const mqttArray = mqttMap[mc.mc_no.toLowerCase()] || [];
-      // console.log("Alarm: ",cached.alarm);
+      // console.log("Alarm: ",mc.mc_no, cached.alarm, cached.status);
 
       if (mqttForMc.length > 0) {
         const brokers = mqttForMc.map((r) => Number(r.broker));
@@ -152,6 +175,11 @@ router.get("/get_combined_data", async (req, res) => {
       //           .substring(0, 19)
       //         : '-';
       // console.log("cached ", mc);
+      const targetItemStatus = latestStatus[0].find((item) => item.mc_no === mcNo);
+      let mcStatus = (!cached?.status?.status && targetItemStatus) ? targetItemStatus.mc_status : (cached?.status?.status);
+
+      const targetItemAlarm = latestAlarm[0].find((item) => item.mc_no === mcNo);
+      let mcAlarm = (!cached?.alarm?.status && targetItemAlarm) ? targetItemAlarm.alarm : (cached?.alarm?.status);
 
       results[mcBase][type] = {
         mc_no: mcNo,
@@ -159,9 +187,9 @@ router.get("/get_combined_data", async (req, res) => {
         line_no: mc.line,
         process: mc.process,
         prod: cached.data?.prod_total || 0,
-        prod_ng: (cached.data?.ng_p ?? 0) + (cached.data?.ng_n ?? 0) + (cached.data?.tng ?? 0),
-        alarm: cached.alarm?.status || "-", // ดึงสถานะจาก mqtt status
-        // status: cached.status?.status || "-", // ดึงสถานะจาก mqtt status
+        prod_ng: (cached.data?.ng_p ?? 0) + (cached.data?.ng_n ?? 0) + (cached.data?.tng ?? 0) + (cached.data?.ng_plug ?? 0),
+        alarm: mcAlarm || "-", // ดึงสถานะจาก mqtt status
+        status: mcStatus || "-", // ดึงสถานะจาก mqtt status
         // cycletime: parseFloat(((mc.line === "H" ? cached.data?.cth2 : cached.data?.eachct || 0) / 100).toFixed(2)),
         ct: parseFloat(((cached.data?.eachct || 0) / 100).toFixed(2)),
         ctH2: parseFloat(((cached.data?.cth2 || 0) / 100).toFixed(2)),
@@ -177,7 +205,13 @@ router.get("/get_combined_data", async (req, res) => {
         target_specia: mc.target_special,
         ring_factor: mc.ring_factor,
       };
+
+      // console.log(mcNo.slice(0,2), mc.line)
+      select.push({group: mcNo.slice(0,2), line_no: mc.line})
+
     }
+    const uniqueObjects = [...new Set(select.map(item => JSON.stringify(item)))].map(string => JSON.parse(string));
+    // console.log(uniqueObjects)
 
     const mergedList = [];
     Object.values(results).forEach((group) => {
@@ -185,8 +219,9 @@ router.get("/get_combined_data", async (req, res) => {
         mergedList.push(machine);
       });
     });
+    // console.log(mergedList)
 
-    return res.json({ data: mergedList, api_result: "ok", });
+    return res.json({ data: mergedList, api_result: "ok", select: uniqueObjects});
   } catch (error) {
     console.error("get_time_status_gd error:", error.message);
     return res
