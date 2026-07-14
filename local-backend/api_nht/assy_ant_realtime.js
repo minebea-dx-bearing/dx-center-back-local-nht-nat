@@ -193,31 +193,21 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const cycle_t = (item.cycle) / 100 || 0;
 
     const f_act_pd = item.ok_rear
-    const s_act_pd = item.ok_front
+    const s_act_pd = item.ok1
     
-    const s_act_ct = item.cycle_time_front / 100 || 0;
-    const f_act_ct = item.cycle_time_rear / 100 || 0;
+    const act_ct = item.cycle / 100 || 0;
 
     const now = moment(item.updated_at);
     const start_time = moment().startOf("day").hour(startTime);
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const s_diff_pd = item.ok1 - f_target_pd;
 
-    const diff_prod = prod_ok - f_target_pd;
-    const diff_ct = Number((cycle_t - s_target_ct).toFixed(2));
+    const diff_ct = Number((act_ct - s_target_ct).toFixed(2));
 
-    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
-
-    const s_diff_pd = item.ok_front - f_target_pd;
-    const f_diff_pd = item.ok_rear - f_target_pd;
-
-    const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
-    const f_diff_ct = Number((f_act_ct - s_target_ct).toFixed(2));
-
-    const s_ng_pd = item.ag_front + item.ng_front + item.mixball_front;
+    const s_ng_pd = item.ag + item.ng + item.mix;
     const f_ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
 
-    const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
-    const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
+    const curr_yield = Number(((item.ok1 / (item.ok1 + item.ag + item.ng + item.mix)) * 100 || 0).toFixed(2));
 
     const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
     const f_curr_utl = Number(((( f_act_pd + f_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
@@ -226,15 +216,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
     const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
 
     const availability_front = Number(((sum_run_front / (total_time_front - plan_shutdown_front)) * 100).toFixed(2)) || 0;
-    const performance_front = Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const performance_front = Number((((item.ok1 + item.ag) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
+    const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     const plan_shutdown_rear = runInfoRear.sum_planshutdown_duration || 0;
     const downtime_seconds_rear = total_time_rear - sum_run_rear - plan_shutdown_rear;
 
     const availability_rear = Number(((sum_run_rear / (total_time_rear - plan_shutdown_rear)) * 100).toFixed(2)) || 0;
     const performance_rear = Number((((item.ok_rear + item.ag_rear) / ((total_time_rear - plan_shutdown_rear) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
       // ...item,
@@ -248,10 +238,10 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       // rear
       f_target_pd,
       f_act_pd,
-      f_diff_pd,
-      f_act_ct,
-      f_diff_ct,
-      f_curr_yield,
+      f_diff_pd: s_diff_pd,
+      f_act_ct: act_ct,
+      f_diff_ct: diff_ct,
+      f_curr_yield: curr_yield,
       f_target_yield: s_target_yield,
       f_curr_utl,
       f_target_utl: s_target_utl,
@@ -261,41 +251,18 @@ const prepareRealtimeData = (currentMachineData, runningTimeData) => {
       s_act_pd,
       s_diff_pd,
       s_target_ct,
-      s_act_ct,
-      s_diff_ct,
-      s_curr_yield,
+      s_act_ct: act_ct,
+      s_diff_ct: diff_ct,
+      s_curr_yield: curr_yield,
       s_target_yield,
       s_curr_utl,
       s_target_utl,
       s_status_alarm,
-      // diff_prod,
-      // prod_ng,
-      // yield_rate,
-      // diff_ct,
-      // sum_run,
-      // total_time,
-      // opn,
-      // s_ng_pd,
-      // f_ng_pd,
-      // sum_run_front,
-      // total_time_front,
-      // opn_front,
-      // sum_run_rear,
-      // total_time_rear,
-      // opn_rear,
-      // downtime_seconds_front,
-      // plan_shutdown_front,
-      // availability_front,
-      // performance_front,
-      // oee_front,
-      // downtime_seconds_rear,
-      // plan_shutdown_rear,
-      // availability_rear,
-      // performance_rear,
-      // oee_rear,
     };
   });
 };
+
+
 
 router.get("/machines", async (req, res) => {
   try {
