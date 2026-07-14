@@ -53,8 +53,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const diff_prod = prod_ok - f_target_pd;
-    const diff_ct = Number((cycle_t - s_target_ct).toFixed(2));
+    const diff_ct = Number((act_ct - s_target_ct).toFixed(2));
 
     const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
 
@@ -117,9 +116,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       s_act_pd,
       s_diff_pd,
       s_target_ct,
-      s_act_ct,
-      s_diff_ct,
-      s_curr_yield,
+      s_act_ct: act_ct,
+      s_diff_ct: diff_ct,
+      s_curr_yield: curr_yield,
       s_target_yield,
       s_curr_utl,
       s_target_utl,

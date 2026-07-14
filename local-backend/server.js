@@ -88,6 +88,7 @@ app.use("/nht/assy/gssm-analysis-by-mc", require("./api_nht/assy_gssm_analysis_b
 app.use("/nht/assy/avs-analysis-by-mc", require("./api_nht/assy_avs_analysis_by_mc"));
 app.use("/nht/assy/alu-analysis-by-mc", require("./api_nht/assy_alu_analysis_by_mc"));
 app.use("/nht/assy/getDataPart", require("./api_nht/getDataPart"));
+app.use("/nht/assy/combine-realtime", require("./api_nht/assy_combine_realtime"));
 
 app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime").router);
 
