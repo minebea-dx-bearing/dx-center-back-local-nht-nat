@@ -9,6 +9,7 @@
 const moment = require("moment");
 
 function determineMachineStatus(item, alarmStatus, occurredStatus) {
+  // console.log(item.mc_no, alarmStatus)
   // 1. ตรวจสอบเงื่อนไขที่สำคัญที่สุด (Connectivity) ก่อนเสมอ
   if (item.broker === 0 || !item.updated_at || moment().diff(moment(item.updated_at), "minutes") > 10) {
     return "SIGNAL LOSE";
@@ -27,7 +28,7 @@ function determineMachineStatus(item, alarmStatus, occurredStatus) {
 
   // 4. ถ้าทั้งคู่ไม่ใช่ "RUN" ให้แสดงสถานะอื่นๆ จาก MQTT (ถ้ามี)
   if (item.status && !item.status.endsWith("_")) {
-    return item.status;
+    return item.status.toUpperCase();
   }
 
   // 5. จัดการกรณีย่อยอื่นๆ เป็นลำดับท้ายๆ

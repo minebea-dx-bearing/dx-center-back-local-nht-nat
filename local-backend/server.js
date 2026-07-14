@@ -62,13 +62,15 @@ app.use("/nat/assy/alu-sum-alarm", require("./api_nat/assy_alu_sum_alarm"));
 app.use("/nat/assy/combine-realtime", require("./api_nat/assy_combine_realtime"));
 app.use("/nat/assy/mbr-analysis-by-mc", require("./api_nat/assy_mbr_analysis_by_mc"));
 app.use("/nat/assy/arp-analysis-by-mc", require("./api_nat/assy_arp_analysis_by_mc"));
+app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 app.use("/nat/assy/fim-analysis-by-mc", require("./api_nat/assy_fim_analysis_by_mc"));
+app.use("/nat/assy/ant-analysis-by-mc", require("./api_nat/assy_ant_analysis_by_mc"));
 app.use("/nat/assy/avs-analysis-by-mc", require("./api_nat/assy_avs_analysis_by_mc"));
 app.use("/nat/assy/alu-analysis-by-mc", require("./api_nat/assy_alu_analysis_by_mc"));
-app.use("/nat/assy/gssm-analysis-by-mc", require("./api_nat/assy_gssm_analysis_by_mc"));
 
 app.use("/nat/assy/report", require("./api_nat/assy_report"));
 app.use("/nat/monitor", require("./api_nat/monitor"));
+app.use("/NAT_GD2_Data", require("./api_nat/gd_2nd_data"));
 
 app.use("/NATBallNg", require("./api_nat/assy_ballNg"));
 
@@ -93,3 +95,6 @@ app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime")
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
+
+
+//TODO: check analysis page show correct data from fomular

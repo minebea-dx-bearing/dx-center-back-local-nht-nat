@@ -1,342 +1,204 @@
+/**
+ * CANONICAL EXAMPLE — Route Pattern R2: Dual spindle
+ * See docs/realtime-developer-guide.md §5.2 before copying this file.
+ *
+ * Pattern: two independent spindles (front/rear), each with its own OEE calc.
+ * Store:   _store_ant.js (Family B singleton) — uses master_mc_no_front_rear and
+ *          withPlanStopAnt mode, which adds alarm_base to running-time rows.
+ *
+ * Naming quirk: f_ prefix = Rear spindle, s_ prefix = Front spindle.
+ * This is inherited from the original hardware naming; do not "fix" it.
+ */
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nat");
-const mqtt = require("mqtt");
-const moment = require("moment");
 
-const master_mc_no_front_rear = require("../util/mqtt_master_mc_no_front_rear");
 const determineMachineStatus = require("../util/determineMachineStatus");
+const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
+const store = require("./_store_ant");
 
-// In-Memory Cache สำหรับเก็บข้อมูลทั้งหมด
-let machineData = {};
+const startTime = 6;
 
-// --- Configurations ---
-const processName = "ANT";
-const MQTT_SERVER = "10.128.16.111";
-const PORT = "1883";
-const startTime = 6; // start time 06:00
-const DATABASE_PROD = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
-const DATABASE_MASTER = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
-
-const reloadMasterData = async () => {
-  console.log(`[${moment().format("HH:mm:ss")}] Reloading master ${processName.toUpperCase()} data from SQL...`);
-  try {
-    const sqlDataArray = await master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER);
-    if (!sqlDataArray) return;
-
-    const sqlDataMap = new Map(sqlDataArray.map((item) => [item.mc_no, item]));
-
-    // 1. เพิ่ม/อัปเดตเครื่องจักรจาก SQL
-    for (const row of sqlDataArray) {
-      if (machineData.hasOwnProperty(row.mc_no)) {
-        machineData[row.mc_no] = {
-          ...machineData[row.mc_no],
-          ...row,
-        };
-      } else {
-        machineData[row.mc_no] = { ...row, source: "SQL" };
-      }
+const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => {
+  // console.log(currentMachineData)
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
+  const new_currentMachineData = {}
+  
+  
+  Object.values(currentMachineData).map((item) => {
+    // set mc_no into 2 no. -> mc_no for rear = odd no.
+    //                      -> mc_no for front = even no.
+    // for example: ANT01 includes front side and rear side -> split into ANT01 for rear side and ANT02 for front side
+    const mc = Number(item.mc_no.slice(-2))
+    const calc_mc_no = mc+(mc-1)
+    const mc_no_front = item.mc_no.slice(0,3) + String(mc*2).padStart(2, '0')
+    const mc_no_rear = item.mc_no.slice(0,3) + String(calc_mc_no).padStart(2, '0')
+    
+    const data_front = {...item, mc_no: mc_no_front, alarm: item.alarm_front, occurred: item.occurred_front}
+    const data_rear = {...item, mc_no: mc_no_rear, alarm: item.alarm_rear, occurred: item.occurred_rear}
+    
+    new_currentMachineData[mc_no_rear] = data_rear
+    new_currentMachineData[mc_no_front] = data_front
+  })
+  
+  let curr_mc_no = Object.keys(new_currentMachineData); 
+  for(let i=1; i<13; i++){
+    const target = `ant${i.toString().padStart(2, '0')}`;
+    if(!curr_mc_no.includes(target)){
+        new_currentMachineData[target] = {
+          process: "ant",
+            mc_no: target,
+            part_no: "no setup",
+            ok_front: 0,
+            cycle_time_front: 0,
+            ag_front: 0,
+            ng_front: 0,
+            mixball_front: 0,
+            ok_rear: 0,
+            cycle_time_rear: 0,
+            ag_rear: 0,
+            ng_rear: 0,
+            mixball_rear: 0,
+            alarm: 'SIGNAL LOSE',
+            target_ct: 0,
+            target_utl: 0,
+            target_yield: 0,
+            target_special: 0,
+            ring_factor: 0
+          }
     }
-
-    for (const mc_no in machineData) {
-      if (!sqlDataMap.has(mc_no)) {
-        console.log(`Machine ${processName.toUpperCase()} removed from SQL: ${mc_no}. Deleting from cache.`);
-        delete machineData[mc_no];
-      }
-    }
-
-    console.log(`Master data reloaded. Total machines ${processName.toUpperCase()} in cache: ${Object.keys(machineData).length}`);
-  } catch (error) {
-    console.error("Failed to reload master ${processName.toUpperCase()} data:", error);
   }
-};
 
-// MQTT connect
-const client = mqtt.connect(`mqtt://${process.env.NAT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
-client.on("connect", () => {
-  console.log("MQTT Connected");
-  client.subscribe("#", (err) => {
-    if (!err) console.log(`Subscribed to all topics (#) for ${processName.toUpperCase()}`);
-  });
-});
-client.on("message", (topic, message) => {
-  try {
-    const mc_no = topic.split("/").pop();
+  const antMaster = await store.master(); 
+  // console.log(antMaster)
+  Object.keys(new_currentMachineData).forEach((key) => {
+    const item = new_currentMachineData[key];
 
-    if (machineData.hasOwnProperty(mc_no)) {
-      const mqttData = JSON.parse(message.toString());
+    // 1. ค้นหาข้อมูลจาก antMaster ที่ mc_no ตรงกัน
+    const masterArray = antMaster.filter((i) => i.mc_no === item.mc_no.toUpperCase());
+    const targetMaster = masterArray[0];
 
-      machineData[mc_no] = {
-        ...machineData[mc_no],
-        ...mqttData,
-        updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
-        source: "MQTT",
+    // 2. ถ้าเจอข้อมูลใน antMaster ให้ทำการรวมร่าง (Merge) ข้อมูลเข้าไป
+    if (targetMaster) {
+      new_currentMachineData[key] = {
+        ...item,
+        ...targetMaster,
+        mc_no: item.mc_no
       };
     }
-  } catch (error) {
-    console.error("MQTT Message Error: ", error);
-  }
-});
+    else {
+      new_currentMachineData[key] = {
+        ...item,
+        part_no: "no setup",
+        target_ct: 0,
+        target_utl: 0,
+        target_yield: 0,
+        target_special: 0,
+        ring_factor: 0,
+        mc_no: item.mc_no
+      };
+    }
+  });
+  // console.log(new_currentMachineData);
+  
+  return Object.values(new_currentMachineData).map((item) => {
+    // console.log(item)
+    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    let act_pd = 0;
+    let act_ct = 0;
+    let ng_pd = 0;
 
-const queryCurrentRunningTime = async () => {
-  const result = await dbms.query(
-    `
-        DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${String(startTime).padStart(2, '0')}:00:00';
-        DECLARE @end_date DATETIME = GETDATE();
-        DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -2, @start_date);
-        DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+    let target = 0;
+    if (item.target_special > 0) {
+      target = item.target_special;
+    } else if (item.target_ct > 0) {
+      target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
+    }
 
-        WITH [base_alarm] AS (
-            SELECT
-                [mc_no],
-            CAST(CONVERT(VARCHAR(19), [occurred], 120) AS DATETIME) AS [occurred],
-                [alarm],
-                CASE
-                    WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1)
-                    ELSE [alarm]
-                END AS [alarm_base],
-                CASE
-                    WHEN RIGHT([alarm], 1) = '_' THEN 'after'
-                    ELSE 'before'
-                END AS [alarm_type]
-            FROM ${DATABASE_ALARM}
-            WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 AND ([alarm] LIKE 'RUN%' OR [alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')
-        ),
-        [with_pairing] AS (
-            SELECT *,
-                ISNULL(
-                LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
-                @end_date
-            ) AS [occurred_next],
-            ISNULL(
-                LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]),
-                'after'
-            ) AS [next_type]
-            FROM [base_alarm]
-        ),
-        [paired_alarms] AS (
-            SELECT
-                [mc_no],
-                [alarm_base],
-            CASE
-                WHEN [occurred] < @start_date THEN CAST(@start_date AS datetime)
-                ELSE [occurred]
-            END AS [occurred_start],
-            CASE
-                WHEN [occurred_next] > @end_date THEN CAST(@end_date AS datetime)
-                ELSE [occurred_next]
-            END AS [occurred_end]
-            FROM [with_pairing]
-            WHERE [alarm_type] = 'before' AND [next_type] = 'after'
-        ),
-        [filter_time] AS (
-            SELECT
-            *,
-            DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-            FROM [paired_alarms]
-            WHERE [occurred_end] > [occurred_start]
-        )
+    if(Number(item.mc_no.slice(-2)) % 2 === 0){
+      // even mc_no
+      act_pd = item.ok_front;
+      act_ct = item.cycle_time_front / 100 || 0;
+      ng_pd = item.ag_front + item.ng_front + item.mixball_front;
+    } else {
+      // odd mc_no
+      act_pd = item.ok_rear;
+      act_ct = item.cycle_time_rear / 100 || 0;
+      ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
+    }
 
-        SELECT
-            [mc_no],
-            [alarm_base],
-            SUM([duration_seconds]) AS [sum_duration],
-          CASE
-            WHEN [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) 
-            ELSE  0 
-            END AS [sum_duration],
-            CASE
-            WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) 
-            ELSE  0 
-            END AS [sum_planshutdown_duration],
-            DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-        FROM [filter_time]
-        GROUP BY [mc_no], [alarm_base]
-    `
-  );
-  return result[1] > 0 ? result[0] : [];
-};
+    const target_ct = item.target_ct || 0;
+    const target_yield = item.target_yield || 0;
+    const target_utl = item.target_utl || 0;
 
-const prepareRealtimeData = (currentMachineData, runningTimeData) => {
-  // f_ -> Rear, s_ -> Front
-  return Object.values(currentMachineData).map((item) => {
-    const s_status_alarm = determineMachineStatus(item, item.alarm_front, item.occurred_front);
-    const f_status_alarm = determineMachineStatus(item, item.alarm_rear, item.occurred_rear);
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
-    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
-    const sum_run = runInfo.sum_duration || 0;
-    const total_time = runInfo.total_time || 0;
-    const opn = total_time > 0 ? Number(((sum_run / total_time) * 100).toFixed(2)) : 0;
-
-    const runInfoFront = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN FRONT") || {};
-    const sum_run_front = runInfoFront.sum_duration || 0;
-    const total_time_front = runInfoFront.total_time || 0;
-    const opn_front = total_time_front > 0 ? Number(((sum_run_front / total_time_front) * 100).toFixed(2)) : 0;
-
-    const runInfoRear = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN REAR") || {};
-    const sum_run_rear = runInfoRear.sum_duration || 0;
-    const total_time_rear = runInfoRear.total_time || 0;
-    const opn_rear = total_time_rear > 0 ? Number(((sum_run_rear / total_time_rear) * 100).toFixed(2)) : 0;
-
-    let target =
-      item.target_special > 0
-        ? item.target_special
-        : Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
-    let s_target_ct = item.target_ct || 0;
-    let s_target_yield = item.target_yield || 0;
-    let s_target_utl = item.target_utl || 0;
-
-    // เปลี่ยนชื่อใหม่เหมือนๆกัน
-    const prod_ok = item.ok_front + item.ok_rear || 0;
-    const prod_ng = item.ag_front + item.ng_front + item.mixball_front + item.ag_rear + item.ng_rear + item.mixball_rear || 0;
-    const cycle_t = (item.cycle_time_front + item.cycle_time_rear) / 2 / 100 || 0;
-
-    const f_act_pd = item.ok_rear
-    const s_act_pd = item.ok_front
+    const diff_ct = Number((act_ct - target_ct).toFixed(2));
     
-    const s_act_ct = item.cycle_time_front / 100 || 0;
-    const f_act_ct = item.cycle_time_rear / 100 || 0;
+    const total_pd = act_pd + ng_pd;
+    const diff_pd = total_pd - target_pd;
+    const curr_yield = total_pd > 0 ? Number(((act_pd / total_pd) * 100).toFixed(2)) : 0;
 
-    const now = moment(item.updated_at);
-    const start_time = moment().startOf("day").hour(startTime);
-    const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * now.diff(start_time, "minutes"));
+    const yield_calc_total = total_pd > 0 ? Number(act_pd / total_pd) : 0;
 
-    const diff_prod = prod_ok - f_target_pd;
-    const diff_ct = Number((cycle_t - s_target_ct).toFixed(2));
+    const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;
+    const curr_utl = denom_utl > 0 ? Number(((total_pd / denom_utl) * 100).toFixed(2)) : 0;
 
-    const yield_rate = Number(((prod_ok / (prod_ok + prod_ng)) * 100 || 0).toFixed(2));
+    // ----- OEE -----
+   const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    // console.log(runInfo)
+    const act_opn_time = runInfo.sum_duration || 0;
+    const total_work_time = runInfo.total_time || 0;
+    const plan_stop = runInfo.sum_planstop_duration || 0;
+    const production_count = act_pd + ng_pd || 0;
+    // console.log(item.mc_no, act_opn_time)
 
-    const s_diff_pd = item.ok_front - f_target_pd;
-    const f_diff_pd = item.ok_rear - f_target_pd;
-
-    const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
-    const f_diff_ct = Number((f_act_ct - s_target_ct).toFixed(2));
-
-    const s_ng_pd = item.ag_front + item.ng_front + item.mixball_front;
-    const f_ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
-
-    const s_curr_yield = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) * 100 || 0).toFixed(2));
-    const f_curr_yield = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) * 100 || 0).toFixed(2));
-    
-    const s_yield_calc_total = Number(((item.ok_front / (item.ok_front + item.ag_front + item.ng_front + item.mixball_front)) || 0));
-    const f_yield_calc_total = Number(((item.ok_rear / (item.ok_rear + item.ag_rear + item.ng_rear + item.mixball_rear)) || 0));
-
-    const s_curr_utl = Number(((( s_act_pd + s_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
-    const f_curr_utl = Number(((( f_act_pd + f_ng_pd ) / (now.diff(start_time, "second") * item.ring_factor / s_target_ct)) * 100).toFixed(2)) || 0;
-    
-    const plan_shutdown_front = runInfoFront.sum_planshutdown_duration || 0;
-    const downtime_seconds_front = total_time_front - sum_run_front - plan_shutdown_front;
-
-    const availability_front = Number(((sum_run_front / (total_time_front - plan_shutdown_front)) * 100).toFixed(2)) || 0;
-    const performance_front = Number((((item.ok_front + item.ag_front) / ((total_time_front - plan_shutdown_front) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const oee_front = Number(((performance_front / 100) * (availability_front / 100) * (s_curr_yield / 100) * 100).toFixed(2)) || 0;
-
-    const plan_shutdown_rear = runInfoRear.sum_planshutdown_duration || 0;
-    const downtime_seconds_rear = total_time_rear - sum_run_rear - plan_shutdown_rear;
-
-    const availability_rear = Number(((sum_run_rear / (total_time_rear - plan_shutdown_rear)) * 100).toFixed(2)) || 0;
-    const performance_rear = Number((((item.ok_rear + item.ag_rear) / ((total_time_rear - plan_shutdown_rear) / s_target_ct)) * 100).toFixed(2)) || 0;
-    const oee_rear = Number(((performance_rear / 100) * (availability_rear / 100) * (f_curr_yield / 100) * 100).toFixed(2)) || 0;
+    const availability = Number(((act_opn_time / (total_work_time - plan_stop)) * 100).toFixed(2)) || 0;
+    // console.log(target_ct, production_count,act_opn_time , item.ring_factor)
+    const performance = Number((((target_ct * production_count) / (act_opn_time * item.ring_factor)) * 100).toFixed(2)) || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
-      // ...item,
       part_no: item.part_no,
       mc_no: item.mc_no.toUpperCase(),
       model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
+      status_alarm,
       target,
-      cycle_t,
-      prod_ok,
-      // rear
-      f_target_pd,
-      f_act_pd,
-      f_diff_pd,
-      f_act_ct,
-      f_diff_ct,
-      f_curr_yield,
-      f_target_yield: s_target_yield,
-      f_curr_utl,
-      f_target_utl: s_target_utl,
-      f_status_alarm,
-      f_yield_calc_total,
-      // front
-      s_target_pd: f_target_pd,
-      s_act_pd,
-      s_diff_pd,
-      s_target_ct,
-      s_act_ct,
-      s_diff_ct,
-      s_curr_yield,
-      s_target_yield,
-      s_curr_utl,
-      s_target_utl,
-      s_status_alarm,
-      s_yield_calc_total
-      // diff_prod,
-      // prod_ng,
-      // yield_rate,
-      // diff_ct,
-      // sum_run,
-      // total_time,
-      // opn,
-      // s_ng_pd,
-      // f_ng_pd,
-      // sum_run_front,
-      // total_time_front,
-      // opn_front,
-      // sum_run_rear,
-      // total_time_rear,
-      // opn_rear,
-      // downtime_seconds_front,
-      // plan_shutdown_front,
-      // availability_front,
-      // performance_front,
-      // oee_front,
-      // downtime_seconds_rear,
-      // plan_shutdown_rear,
-      // availability_rear,
-      // performance_rear,
-      // oee_rear,
+      target_pd,
+      total_pd,
+      act_pd,
+      diff_pd,
+      act_ct,
+      diff_ct,
+      curr_yield,
+      target_yield,
+      target_ct,
+      target_utl,
+      curr_utl,
+      availability,
+      performance,
+      quality: curr_yield,
+      oee,
+      yield_calc_total: yield_calc_total,
+      curr_mc_no
     };
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const runningTime = await queryCurrentRunningTime();
-    const dataArray = prepareRealtimeData(machineData, runningTime);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.f_target_pd || 0;
-        acc.total_ok += item.s_act_pd || 0;
-        acc.total_cycle_t += item.s_act_ct || 0;
-        acc.total_utl += item.s_curr_utl || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_utl: 0, count: 0 }
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily_ok: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_utl: summary.count > 0 ? Number((summary.total_utl / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-reloadMasterData();
-setInterval(reloadMasterData, 300000);
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
 
 module.exports = {
   router,
   prepareRealtimeData,
-  queryCurrentRunningTime,
-  getMachineData: () => machineData,
+  queryCurrentRunningTime: store.getRunningTime,
+  getMachineData: () => store.getRawMap(),
 };
