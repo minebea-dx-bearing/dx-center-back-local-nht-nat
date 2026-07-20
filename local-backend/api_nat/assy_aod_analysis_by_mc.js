@@ -1,19 +1,18 @@
 const express = require("express");
 const router = express.Router();
-const dbms = require("../instance/ms_instance_nht");
+const dbms = require("../instance/ms_instance_nat");
 const moment = require("moment-timezone");
 const getData = require("../util/analysis_assy")
 
-const DATABASE_PROD = "[data_machine_gssm].[dbo].[DATA_PRODUCTION_GSSM]";
-const DATABASE_ALARM = "[data_machine_gssm].[dbo].[DATA_ALARMLIST_GSSM]";
-const DATABASE_STATUS = "[data_machine_gssm].[dbo].[DATA_MCSTATUS_GSSM]";
-const DATABASE_IOT = "[data_machine_gssm].[dbo].[MONITOR_IOT]";
-const DATABASE_MASTER = "[data_machine_gssm].[dbo].[DATA_MASTER_GSSM]";
+const DATABASE_PROD = "[nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]";
+const DATABASE_ALARM = "[nat_mc_assy_aod].[dbo].[DATA_ALARMLIS_AOD]";
+const DATABASE_IOT = "[nat_mc_assy_aod].[dbo].[MONITOR_IOT]";
+const DATABASE_MASTER = "[nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]";
 
-const COLUMN_OK = "[ok]";
-const COLUMN_NG = "[ng]";
+const COLUMN_OK = "[daily_ok]";
+const COLUMN_NG = "[daily_ag]";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
-const COLUMN_CT = "[cycletime]";
+const COLUMN_CT = "[cycle_t]";
 
 // MASTER MACHINE NO.
 router.get("/master_machine", async (req, res) => {
@@ -29,9 +28,7 @@ router.get("/master_machine", async (req, res) => {
     res.json({ data: master[0], success: true, message: "ok" });
   } catch (error) {
     console.error("API Error in /machines: ", error);
-    res
-      .status(500)
-      .json({ data: [], success: false, message: "Internal Server Error" });
+    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
   }
 });
 
@@ -49,7 +46,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 router.get("/status/:mc_no/:date", async (req, res) => {
   try {
     let { mc_no, date } = req.params;
-    const result = await getData.status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_IOT, mc_no, date)
+    const result = await getData.alarm(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_IOT, mc_no, date)
     res.json(result);
   } catch (error) {
     res.json({ data: error, dataAlarm: [], success: false });

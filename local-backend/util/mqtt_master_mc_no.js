@@ -8,12 +8,6 @@
  */
 const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER, CONDITION) => {
   try {
-    // console.log('DATABASE_ALARM',DATABASE_ALARM)
-    let statusColumn = "[alarm]"; 
-
-    if (DATABASE_ALARM.includes('DATA_MCSTATUS')) { // สมมติตัวอย่างเงื่อนไข
-        statusColumn = "[mc_status]";
-    }
     const result = await dbms.query(
       `
         WITH LatestProduction AS (
@@ -26,12 +20,12 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
         LatestAlarm AS (
             SELECT
                 [mc_no],
-                ${statusColumn},
+                [alarm],
                 [occurred],
                 ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
             FROM ${DATABASE_ALARM}
             WHERE
-                UPPER(${statusColumn}) LIKE '%RUN%'AND 
+                UPPER([alarm]) LIKE '%RUN%'AND 
                 [occurred] >= DATEADD(day, -3, GETDATE())
         ),
         MasterTarget AS (
@@ -48,7 +42,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
           )
           SELECT 
               p.*, -- เลือกทุกคอลัมน์จาก Production
-              ISNULL(a.${statusColumn}, 'no data') AS [alarm],
+              ISNULL(a.[alarm], 'no data') AS [alarm],
               a.[occurred],
               ISNULL(m.[part_no], 'no setup') AS [part_no],
               ISNULL(m.[target_ct], 0) AS [target_ct],
@@ -58,7 +52,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
 	            ISNULL(m.[ring_factor], 0) AS [ring_factor]
           FROM LatestProduction p
           LEFT JOIN LatestAlarm a 
-              ON p.[mc_no] = a.[mc_no]
+              ON p.[mc_no] = a.[mc_no] COLLATE Thai_CI_AS
               AND a.rn = 1
           LEFT JOIN MasterTarget m
             ON p.[mc_no] = m.[mc_no] COLLATE Thai_CI_AS

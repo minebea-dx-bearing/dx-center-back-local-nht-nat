@@ -63,7 +63,7 @@ const master_mc_no = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER
             ISNULL(a.alarm_rear, 'no data') AS alarm_rear,
             a.occurred_rear
         FROM LatestProduction p
-        LEFT JOIN PivotedAlarms a ON p.[mc_no] = a.[mc_no]
+        LEFT JOIN PivotedAlarms a ON p.[mc_no] = a.[mc_no] COLLATE Thai_CI_AS
         WHERE p.rn = 1
         ORDER BY p.[mc_no];
       `

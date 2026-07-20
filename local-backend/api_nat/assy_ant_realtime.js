@@ -24,7 +24,6 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
   const new_currentMachineData = {}
   
-  
   Object.values(currentMachineData).map((item) => {
     // set mc_no into 2 no. -> mc_no for rear = odd no.
     //                      -> mc_no for front = even no.
@@ -33,9 +32,11 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
     const calc_mc_no = mc+(mc-1)
     const mc_no_front = item.mc_no.slice(0,3) + String(mc*2).padStart(2, '0')
     const mc_no_rear = item.mc_no.slice(0,3) + String(calc_mc_no).padStart(2, '0')
+    const alarm_front = (item.mqtt_alarm?.includes("(FRONT)")) ? item.mqtt_alarm : null
+    const alarm_rear = (item.mqtt_alarm?.includes("(REAR)")) ? item.mqtt_alarm : null
     
-    const data_front = {...item, mc_no: mc_no_front, alarm: item.alarm_front, occurred: item.occurred_front}
-    const data_rear = {...item, mc_no: mc_no_rear, alarm: item.alarm_rear, occurred: item.occurred_rear}
+    const data_front = {...item, mc_no: mc_no_front, alarm: item.alarm_front, occurred: item.occurred_front, mqtt_alarm: alarm_front}
+    const data_rear = {...item, mc_no: mc_no_rear, alarm: item.alarm_rear, occurred: item.occurred_rear, mqtt_alarm: alarm_rear}
     
     new_currentMachineData[mc_no_rear] = data_rear
     new_currentMachineData[mc_no_front] = data_front
@@ -102,8 +103,7 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
   // console.log(new_currentMachineData);
   
   return Object.values(new_currentMachineData).map((item) => {
-    // console.log(item)
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, item.mqtt_alarm);
     let act_pd = 0;
     let act_ct = 0;
     let ng_pd = 0;

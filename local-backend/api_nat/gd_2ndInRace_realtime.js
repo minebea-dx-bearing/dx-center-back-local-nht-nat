@@ -4,8 +4,8 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-// const store = require("./_store_2gd_ir");
-const store = require("./_store_2gd");
+const store = require("./_store_2gd_ir");
+// const store = require("./_store_2gd");
 
 const isInRaceMachine = (mc_no) => {
   const id = (mc_no || "").toUpperCase();
@@ -18,7 +18,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(machines).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    const status_alarm = determineMachineStatus(item, item.status, item.occurred, item.mqtt_status);
 
     let target = 0;
     if (item.target_special > 0) {

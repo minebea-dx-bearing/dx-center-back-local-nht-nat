@@ -20,7 +20,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime, 30);
 
   return Object.values(machines).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, item.mqtt_alarm);
 
     let target = 0;
     if (item.target_special > 0) {

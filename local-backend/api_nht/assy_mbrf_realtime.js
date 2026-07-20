@@ -7,13 +7,13 @@ const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { getStore } = require("./_store_assy");
 
 const startTime = 6;
-const store = getStore("ASSYF", { alarmTableSuffix: "DATA_ALARMLIST" });
+const store = getStore("ASSYF");
 
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(currentMachineData).map((item) => {
-    const f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    // const f_status_alarm = determineMachineStatus(item, item.status, item.occurred, item.mqtt_status);
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
@@ -57,7 +57,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       mc_no: item.mc_no.replace("_f", "").toUpperCase(),
       model: item.model || "NO DATA",
       process: "MBR_F",
-      f_status_alarm,
+      // f_status_alarm,
       f_target_yield: item.target_yield || 0,
       target,
       f_target_pd,

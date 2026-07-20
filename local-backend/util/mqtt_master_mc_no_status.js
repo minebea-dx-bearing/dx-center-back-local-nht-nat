@@ -8,11 +8,6 @@
  */
 const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER, CONDITION) => {
   try {
-    // let statusColumn = "[alarm]"; 
-
-    // if (DATABASE_ALARM.includes('DATA_MCSTATUS')) { // สมมติตัวอย่างเงื่อนไข
-    //     statusColumn = "[mc_status]";
-    // }
     const result = await dbms.query(
       `
         WITH LatestProduction AS (
@@ -20,12 +15,12 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
                 *,
                 ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [registered] DESC) AS rn
             FROM ${DATABASE_PROD}
-            WHERE [registered] >= DATEADD(day, -3, GETDATE()) ${CONDITION}
+            WHERE [registered] >= DATEADD(day, -3, GETDATE()) ${CONDITION || ""}
         ),
         LatestAlarm AS (
             SELECT
                 [mc_no],
-                [mc_status],
+                UPPER([mc_status]) AS [mc_status],
                 [occurred],
                 ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
             FROM ${DATABASE_STATUS}
@@ -47,7 +42,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
           )
           SELECT 
               p.*, -- เลือกทุกคอลัมน์จาก Production
-              ISNULL(a.[mc_status], 'no data') AS [alarm],
+              ISNULL(a.[mc_status], 'no data') AS [status],
               a.[occurred],
               ISNULL(m.[part_no], 'no setup') AS [part_no],
               ISNULL(m.[target_ct], 0) AS [target_ct],
@@ -57,7 +52,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
 	            ISNULL(m.[ring_factor], 0) AS [ring_factor]
           FROM LatestProduction p
           LEFT JOIN LatestAlarm a 
-              ON p.[mc_no] = a.[mc_no]
+              ON p.[mc_no] = a.[mc_no] COLLATE Thai_CI_AS
               AND a.rn = 1
           LEFT JOIN MasterTarget m
             ON p.[mc_no] = m.[mc_no] COLLATE Thai_CI_AS

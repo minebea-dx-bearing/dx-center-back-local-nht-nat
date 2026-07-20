@@ -23,7 +23,8 @@
 
 const moment = require("moment");
 const dbms = require("../instance/ms_instance_nht");
-const master_mc_no = require("../util/mqtt_master_mc_no");
+// const master_mc_no = require("../util/mqtt_master_mc_no");
+const master_mc_no_status = require("../util/mqtt_master_mc_no_status");
 const { getHub } = require("../util/mqttHub");
 const { createProcessStore } = require("../util/processStore");
 const { createRunningTimeCache, shiftStartDate } = require("../util/runningTimeCache");
@@ -36,7 +37,7 @@ const buildStore = (processName, opts = {}) => {
   const lc = processName.toLowerCase();
   const uc = processName.toUpperCase();
   const dbStem = opts.dbStem || `data_machine_${lc}`;
-  const alarmTableSuffix = opts.alarmTableSuffix || "DATA_ALARMLIS";
+  const alarmTableSuffix = opts.alarmTableSuffix || "DATA_MCSTATUS";
 
   const DATABASE_PROD = `[${dbStem}].[dbo].[DATA_PRODUCTION_${uc}]`;
   const DATABASE_ALARM = `[${dbStem}].[dbo].[${alarmTableSuffix}_${uc}]`;
@@ -48,14 +49,14 @@ const buildStore = (processName, opts = {}) => {
     processName,
     startHour,
     hub,
-    masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+    masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
   });
 
   const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NHT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", dataType:"status" });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },
