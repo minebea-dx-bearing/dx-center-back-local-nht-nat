@@ -21,7 +21,7 @@
 
 const moment = require("moment");
 const dbms = require("../instance/ms_instance_nat");
-const master_mc_no = require("../util/mqtt_master_mc_no");
+const master_mc_no_status = require("../util/mqtt_master_mc_no_status");
 const { getHub } = require("../util/mqttHub");
 const { createProcessStore } = require("../util/processStore");
 const { createRunningTimeCache, shiftStartDate } = require("../util/runningTimeCache");
@@ -40,14 +40,14 @@ const store = createProcessStore({
   processName,
   startHour,
   hub,
-  masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER, "and mc_no like 'ir%'"),
+  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER, "and mc_no like 'ir%'"),
 });
 
 const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", mc_type });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", dataType:"status", CONDITION:"and mc_no like 'ir%'" });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },

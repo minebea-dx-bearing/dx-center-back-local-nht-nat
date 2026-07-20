@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const dbms = require("../instance/ms_instance_nat");
 const moment = require("moment-timezone");
-const getData = require("../api_nat/analysis_2gd")
+const getData = require("../util/analysis_2gd")
 
 const DATABASE_PROD = "[nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]";
 const DATABASE_ALARM = "[nat_mc_mcshop_2gd].[dbo].[DATA_ALARMLIS_2GD]";

@@ -41,7 +41,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   }
 
   return Object.values(currentMachineData).map((item) => {
-    const f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    // const f_status_alarm = determineMachineStatus(item, item.alarm, item.occurred, item.mqtt_alarm);
 
     let target = 0;
     if (item.target_special > 0) {

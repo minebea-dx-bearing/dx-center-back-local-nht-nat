@@ -40,9 +40,12 @@ So if 10 stores all connect to NAT_MQTT_MC_SHOP, they share one MQTT client inst
 const createHub = (brokerUrl) => {
   const handlers = []; // * each handler is { accepts: (mc_no) => boolean, onMessage: (mc_no, payload, topic) => void }, and they are called in registration order when a message arrives for a matching mc_no
   const client = mqtt.connect(brokerUrl);
+  const baseTopic = "data/#";
+  const realtimeCache = {};
 
   client.on("connect", () => {
     console.info(`[mqttHub] connected to ${brokerUrl}`);
+
     client.subscribe("#", (err) => {
       if (err) console.error(`[mqttHub] subscribe error for ${brokerUrl}:`, err);
       else console.info(`[mqttHub] subscribed to # on ${brokerUrl}`);
@@ -54,7 +57,19 @@ const createHub = (brokerUrl) => {
   });
 
   client.on("message", (topic, message) => {
-    const mc_no = topic.split("/").pop();
+    // 1. ตัดเครื่องหมาย / ที่อาจจะหลงมาท้ายประวัติต่างๆ ออกก่อน
+    const cleanTopic = topic.endsWith('/') ? topic.slice(0, -1) : topic;
+    const parts = cleanTopic.split("/");
+    
+    // สมมติโครงสร้างเป็น [ "data", "MC01" ] หรือ [ "status", "MC01" ]
+    // parts[0] จะเป็นชื่อหัวข้อ (data, status, alarm)
+    // parts[1] จะเป็นชื่อเครื่องจักร (mc_no)
+    const topicType = parts[0]; 
+    const mc_no = parts.pop(); // หยิบตัวที่ 2 เสมอ เพื่อความแม่นยำ
+
+    // เช็คเผื่อไว้ถ้าแกะ mc_no ไม่ได้ (เช่น topic ส่งมาสั้นเกินไป) ให้ข้ามไปเลย
+    if (!mc_no) return;
+
     let payload;
     try {
       const cleaned = message.toString().replace(CONTROL_CHAR_REGEX, "");
@@ -63,10 +78,32 @@ const createHub = (brokerUrl) => {
       console.error(`[mqttHub] JSON parse error on topic ${topic}: ${err.message}`);
       return;
     }
-    for (const h of handlers) {  // * fan-out to all matching handlers in registration order, so more specific handlers can run before more general ones if needed
+
+    // สร้างพื้นที่เก็บข้อมูลของเครื่องนี้ถ้ายังไม่มี
+    if (!realtimeCache[mc_no]) {
+      realtimeCache[mc_no] = {};
+    }
+  
+    // 2. ใช้ topicType ที่เราแยกไว้ด้านบนในการจัดหมวดหมู่ข้อมูล
+    if (topicType === "data") {
+      realtimeCache[mc_no].data = payload;
+    } else if (topicType === "status") {
+      realtimeCache[mc_no].status = payload;
+    } else if (topicType === "alarm") {
+      realtimeCache[mc_no].alarm = payload;
+    }else if (topicType === "mqtt") {
+      realtimeCache[mc_no].mqtt = payload;
+    }
+    // console.log(topic, realtimeCache)
+      
+    // 3. ส่งข้อมูลใน cache ตัวที่อัปเดตเต็มๆ ไปให้ handler ใช้งาน 
+    // (เปลี่ยนจากส่งเฉพาะ payload ของ topic นั้นๆ เป็นส่ง realtimeCache[mc_no] ก้อนที่รวมร่างแล้วแทน)
+    for (const h of handlers) { 
       if (h.accepts(mc_no)) { 
         try {
-          h.onMessage(mc_no, payload, topic); // * handler is responsible for its own error handling, so one bad handler doesn't break the others
+          // ส่ง realtimeCache[mc_no] ไปแทน payload เดี่ยวๆ 
+          // เพื่อให้ฝั่งที่เอาไปใช้งาน ได้ข้อมูลครบทั้ง data, status, alarm ของเครื่องนั้นๆ
+          h.onMessage(mc_no, realtimeCache[mc_no], topic); 
         } catch (err) {
           console.error(`[mqttHub] handler error for mc_no ${mc_no}:`, err.message);
         }
@@ -82,6 +119,7 @@ const createHub = (brokerUrl) => {
     _handlerCount: () => handlers.length,
   };
 };
+
 
 const getHub = (brokerUrl) => {
   if (!hubs.has(brokerUrl)) {

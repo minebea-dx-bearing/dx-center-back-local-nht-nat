@@ -47,7 +47,7 @@ const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", mc_type });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop" });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },

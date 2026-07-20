@@ -58,16 +58,18 @@ const createProcessStore = ({
 
   hub.register({ //subscribe MQTT topic and update live data on message
     accepts: (mc_no) => Object.prototype.hasOwnProperty.call(master, mc_no),
-    onMessage: (mc_no, payload, topic) => {
-      // console.log(master, mc_no, payload.status)
+    onMessage: (mc_no, realtimeCache, topic) => {
+      // console.log(mc_no, realtimeCache)
       live[mc_no] = {
         ...live[mc_no],
-        ...payload,
-        // test: payload.status,
-        // topic,
+        ...(realtimeCache.data || {}),
+        mqtt_alarm: realtimeCache.alarm?.status || null, 
+        mqtt_status: realtimeCache.status?.status || null,
+        ...(realtimeCache.mqtt || {}),
         updated_at: moment().format("YYYY-MM-DD HH:mm:ss"),
         source: "MQTT",
       };
+      // console.log(mc_no, live[mc_no])
     },
   });
 

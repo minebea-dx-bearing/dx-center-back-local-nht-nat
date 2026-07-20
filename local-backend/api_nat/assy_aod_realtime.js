@@ -1,20 +1,9 @@
-/**
- * CANONICAL EXAMPLE — Route Pattern R5: Manual handler (escape hatch)
- * See docs/realtime-developer-guide.md §5.5 before copying this file.
- *
- * Escapes makeMachinesHandler because the summary needs avg_opn (average across
- * machines), not the standard sum_target/sum_daily_ok/avg_cycle_t/avg_utl shape.
- *
- * Still uses: _store_assy (no duplicate MQTT/SQL), shiftWindow(), determineMachineStatus().
- * Do NOT copy the manual router.get pattern unless makeMachinesHandler truly cannot
- * produce your summary — adding a new summary type to SUMMARY_FIELDS is preferred.
- */
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { getStore } = require("./_store_assy");
 
 const startTime = 6;
@@ -45,7 +34,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   }
 
   return Object.values(currentMachineData).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred);
+    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, item.mqtt_alarm);
 
     let target = 0;
     if (item.target_special > 0) {
@@ -114,35 +103,15 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.target_actual || 0;
-        acc.total_pd += item.total_pd || 0;
-        acc.total_cycle_t += item.cycle_t || 0;
-        acc.total_opn += item.opn || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_pd: 0, total_cycle_t: 0, total_opn: 0, count: 0 },
-    );
-
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily: summary.total_pd,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
 
 module.exports = {
   router,

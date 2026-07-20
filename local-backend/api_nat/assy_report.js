@@ -1287,8 +1287,7 @@ WITH [mbrf] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
 	FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
-	WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+	WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1451,8 +1450,7 @@ WITH [arp] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1612,8 +1610,7 @@ WITH [gssm] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1774,8 +1771,7 @@ WITH [fim] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -1950,8 +1946,7 @@ WITH [antr] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -2125,8 +2120,7 @@ WITH [aod] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
@@ -2285,8 +2279,7 @@ WITH [aod] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
 		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
     FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
-    WHERE [registered] >= @NearestMonth 
-	  AND [registered] <= EOMONTH(@NearestMonth)
+    WHERE [registered] <= EOMONTH(@NearestMonth)
 ),
 [merge] AS (
 	SELECT
