@@ -110,7 +110,6 @@ const calculateShifts = (data, date) => {
 
       All = {
         ...data[data.length - 1],
-        model: M?.model || N?.model,
         mc_no: M?.mc_no || N?.mc_no,
         part_no: M?.part_no || N?.part_no,
         mfg_date: M?.mfg_date || N?.mfg_date,
@@ -247,7 +246,7 @@ const productionByHour = async (dbms, DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, CO
     }
 }
 
-const alarm = async (dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_IOT, mc_no, date) =>{
+const alarm = async (dbms, DATABASE_ALARM, DATABASE_IOT, mc_no, date) =>{
     try {
       let dateTomarrow = moment(date).add(1, "day").endOf("day").format("YYYY-MM-DD");
   

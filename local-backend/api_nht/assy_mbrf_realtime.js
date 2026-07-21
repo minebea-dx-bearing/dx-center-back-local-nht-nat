@@ -13,7 +13,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(currentMachineData).map((item) => {
-    // const f_status_alarm = determineMachineStatus(item, item.status, item.occurred, item.mqtt_status);
+    // const f_status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
