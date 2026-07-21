@@ -25,7 +25,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
                 ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY [occurred] DESC) AS rn
             FROM ${DATABASE_STATUS}
             WHERE
-                UPPER([mc_status]) LIKE '%RUN%'AND 
+                --UPPER([mc_status]) LIKE '%RUN%'AND 
                 [occurred] >= DATEADD(day, -3, GETDATE())
         ),
         MasterTarget AS (
@@ -42,7 +42,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
           )
           SELECT 
               p.*, -- เลือกทุกคอลัมน์จาก Production
-              ISNULL(a.[mc_status], 'no data') AS [status],
+              ISNULL(a.[mc_status], 'no data run') AS [status],
               a.[occurred],
               ISNULL(m.[part_no], 'no setup') AS [part_no],
               ISNULL(m.[target_ct], 0) AS [target_ct],
