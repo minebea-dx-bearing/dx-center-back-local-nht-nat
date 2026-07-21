@@ -111,7 +111,6 @@ const calculateShifts = (data, date) => {
 
       All = {
         ...data[data.length - 1],
-        model: M?.model || N?.model,
         mc_no: M?.mc_no || N?.mc_no,
         part_no: M?.part_no || N?.part_no,
         mfg_date: M?.mfg_date || N?.mfg_date,
@@ -143,8 +142,7 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
     try {
       let data = await dbms.query(`
           SELECT [registered],
-              convert(varchar, [registered], 8) AS TIME ,
-              [model] ,
+              convert(varchar, [registered], 8) AS TIME,
               format(iif(DATEPART(HOUR, [registered]) < 8, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,

@@ -3,35 +3,50 @@
  * @param {object} item - Object ข้อมูลหลักของเครื่องจักร
  * @param {string} alarmStatus - สถานะจาก SQL (item.alarm_front หรือ item.alarm_rear)
  * @param {string|null} occurredStatus - สถานะ occurred (item.occurred_front หรือ item.occurred_rear)
- * @param {} mqtt_status - alarm/status ที่ส่งมาจาก mqtt ถ้า process ไหนที่มี status แล้วจะใช้ data status แล้วในอนาคตถ้าส่ง status มาหมดแล้วจะเปลี่ยนไปใช้ status หมด
+ * @param {string} type - ส่งมาว่าจะใช้ข้อมูล alarm หรือ status
  * @returns {string} สถานะที่คำนวณแล้ว (เช่น "RUNNING", "STOP", "SIGNAL LOST")
  */
 
 const moment = require("moment");
 
-function determineMachineStatus(item, alarmStatus, occurredStatus, mqtt_status) {
-  // console.log(item.mc_no, mqtt_status, item.mqtt_status, item.mqtt_alarm,alarmStatus, item.broker, item.updated_at, !item.updated_at, moment().diff(moment(item.updated_at), "minutes") > 10)
-  // console.log(item.broker === 0 || !item.updated_at || moment().diff(moment(item.updated_at), "minutes") > 10)
-  // console.log(item.mc_no, alarmStatus, mqtt_status?.toUpperCase().includes("RUN"), mqtt_status)
+function determineMachineStatus(item, alarmStatus, occurredStatus, type) {
   // 1. ตรวจสอบเงื่อนไขที่สำคัญที่สุด (Connectivity) ก่อนเสมอ
   if (item.broker === 0 || !item.updated_at || moment().diff(moment(item.updated_at), "minutes") > 10) {
     return "SIGNAL LOST";
   }
 
-  // 2. ให้ความสำคัญกับ MQTT (item.status) เป็นอันดับแรก
-  if (mqtt_status?.toUpperCase().includes("RUN")) {
-    // ถ้า status มีคำว่า "RUN" ให้ตัดสินจากตรงนี้เลย
-    return mqtt_status.endsWith("_") ? "STOP" : "RUNNING";
-  }
+  if(type === "status"){
+    // console.log("status", item.mc_no, item.mqtt_status, alarmStatus)
+    // 2. ให้ความสำคัญกับ MQTT (item.status) เป็นอันดับแรก
+    if (item.mqtt_status?.toUpperCase().includes("RUN")) {
+      return "RUNNING";
+    }
 
-  // 4. ถ้าทั้งคู่ไม่ใช่ "RUN" ให้แสดงสถานะอื่นๆ จาก MQTT (ถ้ามี)
-  if (mqtt_status && !mqtt_status.endsWith("_")) {
-    return mqtt_status.toUpperCase();
-  }
+    // 3. ถ้า mqtt ไม่ได้ส่งข้อมูลมาแล้ว status จาก SQL เป็น RUN ให้เป็น RUNNING
+    if (!item.mqtt_status && alarmStatus?.toUpperCase().includes("RUN")) {
+      return "RUNNING";
+    }
+    
+    // 4. ถ้าทั้งคู่ไม่ใช่ "RUN" ให้แสดงสถานะอื่นๆ จาก MQTT (ถ้ามี)
+    if (item.mqtt_status) {
+      return item.mqtt_status.toUpperCase().replace("_", " ");
+    }
+  } else {
+    // console.log("alarm", item.mc_no, item.mqtt_alarm, alarmStatus)
+    if (item.mqtt_alarm?.toUpperCase().includes("RUN")) {
+      // ถ้า status มีคำว่า "RUN" ให้ตัดสินจากตรงนี้เลย
+      return item.mqtt_alarm.endsWith("_") ? "STOP" : "RUNNING";
+    }
 
-  // 3. ถ้า MQTT ไม่ใช่ "RUN" ให้ไปดูที่ SQL (alarmStatus ที่ส่งเข้ามา)
-  if (alarmStatus?.toUpperCase().includes("RUN") && !alarmStatus.endsWith("_")) {
-    return "RUNNING";
+    // 3. ถ้า mqtt ไม่ได้ส่งข้อมูลมาแล้ว status จาก SQL เป็น RUN ให้เป็น RUNNING
+    if (!item.mqtt_alarm && (alarmStatus?.toUpperCase().includes("RUN") && !alarmStatus.endsWith("_"))) {
+      return "RUNNING";
+    }
+
+    // 4. ถ้าทั้งคู่ไม่ใช่ "RUN" ให้แสดงสถานะอื่นๆ (ถ้ามี)
+    if (item.mqtt_alarm && !item.mqtt_alarm.endsWith("_")) {
+      return item.mqtt_alarm.toUpperCase();
+    }
   }
 
   // 5. จัดการกรณีย่อยอื่นๆ เป็นลำดับท้ายๆ

@@ -14,7 +14,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
   // f_ -> Grease, s_ -> Shield
   return Object.values(currentMachineData).map((item) => {
-    const s_status_alarm = determineMachineStatus(item, item.status, item.occurred, item.mqtt_status);
+    const s_status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;

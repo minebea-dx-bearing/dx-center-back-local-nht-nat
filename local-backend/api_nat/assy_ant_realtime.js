@@ -103,7 +103,7 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
   // console.log(new_currentMachineData);
   
   return Object.values(new_currentMachineData).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, item.mqtt_alarm);
+    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, "alarm");
     let act_pd = 0;
     let act_ct = 0;
     let ng_pd = 0;

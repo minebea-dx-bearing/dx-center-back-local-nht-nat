@@ -13,8 +13,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
   // f_ -> Rear, s_ -> Front
   return Object.values(currentMachineData).map((item) => {
-    const s_status_alarm = determineMachineStatus(item, item.alarm_front, item.occurred_front);
-    const f_status_alarm = determineMachineStatus(item, item.alarm_rear, item.occurred_rear);
+    const s_status_alarm = determineMachineStatus(item, item.alarm_front, item.occurred_front, "status");
+    const f_status_alarm = determineMachineStatus(item, item.alarm_rear, item.occurred_rear, "status");
 
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
     const sum_run = runInfo.sum_duration || 0;
