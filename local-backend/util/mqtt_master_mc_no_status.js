@@ -17,7 +17,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
             FROM ${DATABASE_PROD}
             WHERE [registered] >= DATEADD(day, -3, GETDATE()) ${CONDITION || ""}
         ),
-        LatestAlarm AS (
+        LatestStatus AS (
             SELECT
                 [mc_no],
                 UPPER([mc_status]) AS [mc_status],
@@ -51,7 +51,7 @@ const master_mc_no_status = async (dbms, DATABASE_PROD, DATABASE_STATUS, DATABAS
               ISNULL(m.[target_special], 0) AS [target_special],
 	            ISNULL(m.[ring_factor], 0) AS [ring_factor]
           FROM LatestProduction p
-          LEFT JOIN LatestAlarm a 
+          LEFT JOIN LatestStatus a 
               ON p.[mc_no] = a.[mc_no] COLLATE Thai_CI_AS
               AND a.rn = 1
           LEFT JOIN MasterTarget m

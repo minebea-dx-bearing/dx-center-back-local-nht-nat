@@ -30,7 +30,7 @@ const { buildRunningTimeSql } = require("../util/buildRunningTimeSql");
 const processName = "2GD";
 const startHour = 7; // reset at 7 o'clock
 const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
+const DATABASE_STATUS = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 let mc_type = 'IR';
 
@@ -40,14 +40,14 @@ const store = createProcessStore({
   processName,
   startHour,
   hub,
-  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER, "and mc_no like 'ir%'"),
+  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER, "and mc_no like 'ir%'"),
 });
 
 const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", dataType:"status", CONDITION:"and mc_no like 'ir%'" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStop", dataType:"status", CONDITION:"and mc_no like 'ir%'" });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },

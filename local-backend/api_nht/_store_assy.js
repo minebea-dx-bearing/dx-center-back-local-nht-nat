@@ -40,7 +40,7 @@ const buildStore = (processName, opts = {}) => {
   const alarmTableSuffix = opts.alarmTableSuffix || "DATA_MCSTATUS";
 
   const DATABASE_PROD = `[${dbStem}].[dbo].[DATA_PRODUCTION_${uc}]`;
-  const DATABASE_ALARM = `[${dbStem}].[dbo].[${alarmTableSuffix}_${uc}]`;
+  const DATABASE_STATUS = `[${dbStem}].[dbo].[${alarmTableSuffix}_${uc}]`;
   const DATABASE_MASTER = `[${dbStem}].[dbo].[DATA_MASTER_${uc}]`;
 
   const hub = getHub(`mqtt://${process.env.NHT_MQTT_ASSY_FRONT}:${process.env.MQTT_PORT}`);
@@ -49,14 +49,14 @@ const buildStore = (processName, opts = {}) => {
     processName,
     startHour,
     hub,
-    masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+    masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER),
   });
 
   const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NHT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop", dataType:"status" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStop", dataType:"status" });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },
