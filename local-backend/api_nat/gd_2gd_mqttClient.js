@@ -41,9 +41,7 @@ client.on("message", (topic, messageBuffer) => {
     if (messageBuffer.length < 2) return; // ถ้าส่งมาแค่ตัวเดียวหรือว่างๆ ไม่ต้องทำต่อ
     // 1. จัดการเรื่อง Topic ก่อน
     const parts = topic.split("/");
-    const mcNo = parts.pop();
-    const topicType = parts.join("/");
-    
+    const mcNo = parts[3];
     if (!mcNo) return;
 
     // 2. แปลงและล้างข้อมูลขยะ (Sanitize)
@@ -72,26 +70,24 @@ client.on("message", (topic, messageBuffer) => {
 
     // 5. บันทึกลง Cache
     if (!realtimeCache[mcNo]) {
-      realtimeCache[mcNo] = { };
+      realtimeCache[mcNo] = { mqtt: [] };
     }
 
-    // if (topic.startsWith("mqtt/nat/2gd/")) {
-    //   if (!Array.isArray(realtimeCache[mcNo].mqtt)) {
-    //     realtimeCache[mcNo].mqtt = [];
-    //   }
-    //   realtimeCache[mcNo].mqtt.unshift(parsedData);
-    //   realtimeCache[mcNo].mqtt = realtimeCache[mcNo].mqtt.slice(0, 6);
-    // } else if (topic.startsWith("data/nat/2gd/")) {
-    //   realtimeCache[mcNo].data = parsedData;
-    // } else if (topic.startsWith("status/nat/2gd/")) {
-    //   realtimeCache[mcNo].status = parsedData;
-    // } else if (topic.startsWith("alarm/nat/2gd/")) {
-    //   realtimeCache[mcNo].alarm = parsedData;
-    // }
+    if (topic.startsWith("mqtt/nat/2gd/")) {
+      if (!Array.isArray(realtimeCache[mcNo].mqtt)) {
+        realtimeCache[mcNo].mqtt = [];
+      }
+      realtimeCache[mcNo].mqtt.unshift(parsedData);
+      realtimeCache[mcNo].mqtt = realtimeCache[mcNo].mqtt.slice(0, 6);
+    } else if (topic.startsWith("data/nat/2gd/")) {
+      realtimeCache[mcNo].data = parsedData;
+    } else if (topic.startsWith("status/nat/2gd/")) {
+      realtimeCache[mcNo].status = parsedData;
+    } else if (topic.startsWith("alarm/nat/2gd/")) {
+      realtimeCache[mcNo].alarm = parsedData;
+    }
 
-    realtimeCache[mcNo][topicType] = parsedData;
-
-    realtimeCache[mcNo][topicType].lastUpdate = new Date();
+    realtimeCache[mcNo].lastUpdate = new Date();
   } catch (err) {
     // ถ้าพังที่ JSON.parse แสดงว่า Data ขยะมันเข้าไปทำลายโครงสร้าง JSON
     console.error("Fatal MQTT Error:", err);
