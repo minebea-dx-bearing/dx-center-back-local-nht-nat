@@ -40,7 +40,6 @@ So if 10 stores all connect to NAT_MQTT_MC_SHOP, they share one MQTT client inst
 const createHub = (brokerUrl) => {
   const handlers = []; // * each handler is { accepts: (mc_no) => boolean, onMessage: (mc_no, payload, topic) => void }, and they are called in registration order when a message arrives for a matching mc_no
   const client = mqtt.connect(brokerUrl);
-  const baseTopic = "data/#";
   const realtimeCache = {};
 
   client.on("connect", () => {
