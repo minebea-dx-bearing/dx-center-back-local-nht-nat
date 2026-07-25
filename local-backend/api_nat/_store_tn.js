@@ -7,7 +7,7 @@
 
 const moment = require("moment");
 const dbms = require("../instance/ms_instance_nat");
-const master_mc_no = require("../util/mqtt_master_mc_no");
+const master_mc_no_status = require("../util/mqtt_master_mc_no_status");
 const { getHub } = require("../util/mqttHub");
 const { createProcessStore } = require("../util/processStore");
 const { createRunningTimeCache, shiftStartDate } = require("../util/runningTimeCache");
@@ -18,6 +18,7 @@ const startHour = 5;
 const startMinute = 30;
 const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
+const DATABASE_STATUS = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
 const hub = getHub(`mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
@@ -26,14 +27,14 @@ const store = createProcessStore({
   processName,
   startHour,
   hub,
-  masterLoader: () => master_mc_no(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER),
 });
 
 const runningTimeCache = createRunningTimeCache({ // * cache running time for 20 seconds to avoid hitting DB on every API request, since the running time doesn't need to be super real-time
   ttlMs: 20_000,
   keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
-    const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, startMinute, mode: "withPlanStop" });
+    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, startMinute, mode: "withPlanStop", dataType:"status", });
     const result = await dbms.query(sql);
     return result[1] > 0 ? result[0] : [];
   },
