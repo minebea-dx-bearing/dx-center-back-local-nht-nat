@@ -17,7 +17,7 @@ const store = require("./_store_tn");
 const startTime = 5;
 
 const prepareRealtimeData = (machines, runningTimeData, now) => {
-  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime, 30);
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(machines).map((item) => {
     const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
