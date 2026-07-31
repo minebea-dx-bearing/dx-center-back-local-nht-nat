@@ -12,6 +12,7 @@ const dbNAT = require("../instance/ms_instance_nat");
 router.get("/get_combined_data", async (req, res) => {
   try {
     console.log("date today", moment().format("YYYY-MM-DD"));
+    const workDate = (moment().format("HH") < 7) ? moment().add(-1, "day").format("YYYY-MM-DD") : moment().format("YYYY-MM-DD");
 
     const mcRes = await dbNAT.query(`
         WITH result AS (
@@ -30,7 +31,7 @@ router.get("/get_combined_data", async (req, res) => {
                 ROW_NUMBER() OVER (PARTITION BY m.mc_no ORDER BY m.registered DESC) AS rn
             FROM [nat_mc_mcshop_2gd].[dbo].[DATA_MASTER_2GD] m
             LEFT JOIN [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD] p ON m.mc_no = p.mc_no
-            WHERE format(iif (DATEPART (HOUR, p.[registered]) < 7, dateadd (day, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${moment().format("YYYY-MM-DD")}'
+            WHERE format(iif (DATEPART (HOUR, p.[registered]) < 7, dateadd (day, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${workDate}'
         )
         SELECT
             mc_no,
@@ -96,7 +97,8 @@ router.get("/get_combined_data", async (req, res) => {
                 mac_id,
                 ROW_NUMBER() OVER (PARTITION BY mc_no ORDER BY registered DESC) AS rn
             FROM [nat_mc_mcshop_2gd].[dbo].[MONITOR_IOT]
-            WHERE registered > DATEADD (MINUTE, -35, GETDATE ()))
+            WHERE registered > DATEADD (MINUTE, -35, GETDATE ())
+        )
         SELECT * FROM ranked_mqtt
         WHERE rn <= 6
         ORDER BY mc_no
@@ -202,7 +204,7 @@ router.get("/get_combined_data", async (req, res) => {
         target_ct: mc.target_ct,
         target_utl: mc.target_utl,
         target_yield: mc.target_yield,
-        target_specia: mc.target_special,
+        target_special: mc.target_special,
         ring_factor: mc.ring_factor,
       };
 

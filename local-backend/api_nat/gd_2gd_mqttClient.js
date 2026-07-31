@@ -40,8 +40,11 @@ client.on("message", (topic, messageBuffer) => {
   try {
     if (messageBuffer.length < 2) return; // ถ้าส่งมาแค่ตัวเดียวหรือว่างๆ ไม่ต้องทำต่อ
     // 1. จัดการเรื่อง Topic ก่อน
-    const parts = topic.split("/");
-    const mcNo = parts[3];
+    const cleanTopic = topic.endsWith('/') ? topic.slice(0, -1) : topic;
+    const parts = cleanTopic.split("/");
+    // const mcNo = parts[3];
+    const mcNo = parts.pop();
+    const topicType = parts[0]; 
     if (!mcNo) return;
 
     // 2. แปลงและล้างข้อมูลขยะ (Sanitize)
@@ -73,20 +76,20 @@ client.on("message", (topic, messageBuffer) => {
       realtimeCache[mcNo] = { mqtt: [] };
     }
 
-    if (topic.startsWith("mqtt/nat/2gd/")) {
+    if (topicType === "mqtt") {
       if (!Array.isArray(realtimeCache[mcNo].mqtt)) {
         realtimeCache[mcNo].mqtt = [];
       }
       realtimeCache[mcNo].mqtt.unshift(parsedData);
       realtimeCache[mcNo].mqtt = realtimeCache[mcNo].mqtt.slice(0, 6);
-    } else if (topic.startsWith("data/nat/2gd/")) {
+    } else if (topicType === "data") {
       realtimeCache[mcNo].data = parsedData;
-    } else if (topic.startsWith("status/nat/2gd/")) {
+    } else if (topicType === "status") {
       realtimeCache[mcNo].status = parsedData;
-    } else if (topic.startsWith("alarm/nat/2gd/")) {
+    } else if (topicType === "alarm") {
       realtimeCache[mcNo].alarm = parsedData;
     }
-
+    
     realtimeCache[mcNo].lastUpdate = new Date();
   } catch (err) {
     // ถ้าพังที่ JSON.parse แสดงว่า Data ขยะมันเข้าไปทำลายโครงสร้าง JSON

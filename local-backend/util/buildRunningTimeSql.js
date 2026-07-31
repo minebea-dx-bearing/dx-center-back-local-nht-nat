@@ -16,9 +16,12 @@
  *                         Used by 2GD (OutSuper variant) and TN.
  *
  * The startMinute argument supports TN (05:30 boundary).
+ *
+ * Shift anchor: @start_date is derived from GETDATE() inside SQL, not from the
+ * Node clock. Shifting `now` back by the shift offset before truncating to a
+ * date yields the correct shift day on both sides of midnight without a CASE —
+ * between 00:00 and the boundary we are still inside YESTERDAY's shift.
  */
-
-const moment = require("moment");
 
 const ALARM_FILTERS = {
   withPlanStop: `([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
@@ -64,59 +67,23 @@ const FINAL_SELECTS = {
 
 };
 
-const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dataType, CONDITION }) => {
+const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dataType }) => {
   const alarmFilter = ALARM_FILTERS[mode];
   const finalSelect = FINAL_SELECTS[mode];
   if (!alarmFilter || !finalSelect) throw new Error(`buildRunningTimeSql: unknown mode "${mode}"`);
 
-  const hh = String(startHour).padStart(2, "0");
-  const mm = String(startMinute).padStart(2, "0");
+  const shiftOffsetMin = startHour * 60 + startMinute;
 
-  // const query = `
-  //     DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
-  //     DECLARE @end_date DATETIME = GETDATE();
-  //     DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
-  //     DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
-
-  //     WITH [base_alarm] AS (
-  //       SELECT
-  //         [mc_no],
-  //         [occurred],
-  //         [alarm],
-  //         CASE WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1) ELSE [alarm] END AS [alarm_base],
-  //         CASE WHEN RIGHT([alarm], 1) = '_' THEN 'after' ELSE 'before' END AS [alarm_type]
-  //       FROM ${alarmTable}
-  //       WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
-  //         AND ${alarmFilter}
-  //     ),
-  //     [with_pairing] AS (
-  //       SELECT *,
-  //         ISNULL(LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]), @end_date) AS [occurred_next],
-  //         ISNULL(LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]), 'after') AS [next_type]
-  //       FROM [base_alarm]
-  //     ),
-  //     [paired_alarms] AS (
-  //       SELECT
-  //         [mc_no],
-  //         [alarm_base],
-  //         CASE WHEN [occurred] < @start_date THEN @start_date ELSE [occurred] END AS [occurred_start],
-  //         CASE WHEN [occurred_next] > @end_date THEN @end_date ELSE [occurred_next] END AS [occurred_end]
-  //       FROM [with_pairing]
-  //       WHERE [alarm_type] = 'before' AND [next_type] = 'after'
-  //     ),
-  //     [filter_time] AS (
-  //       SELECT *, DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-  //       FROM [paired_alarms]
-  //       WHERE [occurred_end] > [occurred_start]
-  //     )
-  //     ${finalSelect}
-  // `
+  const dateHeader = `
+    DECLARE @now DATETIME = GETDATE();
+    DECLARE @start_date DATETIME = DATEADD(MINUTE, ${shiftOffsetMin}, CAST(CAST(DATEADD(MINUTE, -${shiftOffsetMin}, @now) AS DATE) AS DATETIME));
+    DECLARE @end_date DATETIME = @now;
+    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
+    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+  `;
 
   const query = (dataType != 'status') ? `
-      DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
-      DECLARE @end_date DATETIME = GETDATE();
-      DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
-      DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+      ${dateHeader}
 
       WITH [base_alarm] AS (
         SELECT
@@ -151,10 +118,7 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
       )
       ${finalSelect}
   ` : `
-    DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
-    DECLARE @end_date DATETIME = GETDATE();
-    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
-    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+    ${dateHeader}
 
     WITH [base_alarm] AS (
       SELECT
@@ -162,7 +126,7 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
         [occurred] AS [occurred_start],
         [mc_status]
       FROM ${alarmTable}
-      WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1 ${CONDITION || ""}
+      WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
     ),
     [with_pairing] AS (
       SELECT *,
