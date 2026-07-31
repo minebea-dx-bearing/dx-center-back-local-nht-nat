@@ -4,8 +4,8 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const store = require("./_store_2gd_or");
-// const store = require("./_store_2gd");
+// const store = require("./_store_2gd_or");
+const store = require("./_store_2gd");
 
 const isOutRaceMachine = (mc_no) => {
   const id = (mc_no || "").toUpperCase();
@@ -19,7 +19,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
 
   return Object.values(machines).map((item) => {
     // console.log(item, item.mc_no, item.broker)
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, "alarm");
+    const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
     let target = 0;
     if (item.target_special > 0) {

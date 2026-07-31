@@ -4,8 +4,8 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const store = require("./_store_2gd_ir");
-// const store = require("./_store_2gd");
+// const store = require("./_store_2gd_ir");
+const store = require("./_store_2gd");
 
 const isInSuperMachine = (mc_no) => {
   const id = (mc_no || "").toUpperCase();
