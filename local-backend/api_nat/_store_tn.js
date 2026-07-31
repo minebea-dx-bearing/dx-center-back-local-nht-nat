@@ -15,7 +15,6 @@ const { buildRunningTimeSql } = require("../util/buildRunningTimeSql");
 
 const processName = "TN";
 const startHour = 5;
-const startMinute = 30;
 const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
 const DATABASE_ALARM = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
 const DATABASE_STATUS = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
@@ -34,7 +33,7 @@ const runningTimeCache = createRunningTimeCache({ // * cache running time for 20
   ttlMs: 20_000,
   keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
-    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, startMinute, mode: "withPlanStop", dataType:"status", });
+    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStop", dataType:"status", });
     const result = await dbms.query(sql);
     return result[1] > 0 ? result[0] : [];
   },
