@@ -85,10 +85,10 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
 
 router.get( "/machines",
   makeMachinesHandler({
-    getMachines: () => store.getSnapshot(),
-    getRunningTime: store.getRunningTime,
-    prepareRealtimeData,
-    summary: "standard",
+    getMachines: () => store.getSnapshot(), //* data from mqtt
+    getRunningTime: store.getRunningTime, //* data from sql server
+    prepareRealtimeData, //* create body for each machine card
+    summary: "standard", //* create summary data from all machines
   }),
 );
 
@@ -97,4 +97,4 @@ module.exports = {
   prepareRealtimeData,
   queryCurrentRunningTime: store.getRunningTime,
   getMachineData: () => store.getRawMap(),
-};
+}; //* export just router is enough?

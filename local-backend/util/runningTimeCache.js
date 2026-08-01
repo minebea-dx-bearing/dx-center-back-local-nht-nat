@@ -44,7 +44,7 @@ const createRunningTimeCache = ({ ttlMs, keyFn, loader }) => {
   };
 
   return {
-    get,
+    get, // * main method to get the cached data, either from cache or by calling loader
     _peek: () => ({ key: state.key, at: state.at, hasData: state.data !== null }), // * for testing: check the current cache key, timestamp, and whether it has data without triggering a load
   };
 };

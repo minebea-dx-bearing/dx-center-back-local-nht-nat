@@ -16,9 +16,12 @@
  *                         Used by 2GD (OutSuper variant) and TN.
  *
  * The startMinute argument supports TN (05:30 boundary).
+ *
+ * Shift anchor: @start_date is derived from GETDATE() inside SQL, not from the
+ * Node clock. Shifting `now` back by the shift offset before truncating to a
+ * date yields the correct shift day on both sides of midnight without a CASE —
+ * between 00:00 and the boundary we are still inside YESTERDAY's shift.
  */
-
-const moment = require("moment");
 
 const ALARM_FILTERS = {
   withPlanStop: `([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
@@ -69,8 +72,15 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
   const finalSelect = FINAL_SELECTS[mode];
   if (!alarmFilter || !finalSelect) throw new Error(`buildRunningTimeSql: unknown mode "${mode}"`);
 
-  const hh = String(startHour).padStart(2, "0");
-  const mm = String(startMinute).padStart(2, "0");
+  const shiftOffsetMin = startHour * 60 + startMinute;
+
+  const dateHeader = `
+    DECLARE @now DATETIME = GETDATE();
+    DECLARE @start_date DATETIME = DATEADD(MINUTE, ${shiftOffsetMin}, CAST(CAST(DATEADD(MINUTE, -${shiftOffsetMin}, @now) AS DATE) AS DATETIME));
+    DECLARE @end_date DATETIME = @now;
+    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
+    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+  `;
 
   // const query = `
   //     DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
@@ -113,10 +123,7 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
   // `
 
   const query = (dataType != 'status') ? `
-      DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
-      DECLARE @end_date DATETIME = GETDATE();
-      DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
-      DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+      ${dateHeader}
 
       WITH [base_alarm] AS (
         SELECT
@@ -151,10 +158,7 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
       )
       ${finalSelect}
   ` : `
-    DECLARE @start_date DATETIME = '${moment().format("YYYY-MM-DD")} ${hh}:${mm}:00';
-    DECLARE @end_date DATETIME = GETDATE();
-    DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
-    DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
+    ${dateHeader}
 
     WITH [base_alarm] AS (
       SELECT

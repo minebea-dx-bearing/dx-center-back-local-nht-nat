@@ -27,14 +27,14 @@ const store = createProcessStore({
   processName,
   startHour,
   hub,
-  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER),
+  masterLoader: () => master_mc_no_status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER),//* get current machine  information
 });
 
 const runningTimeCache = createRunningTimeCache({ // * cache running time for 20 seconds to avoid hitting DB on every API request, since the running time doesn't need to be super real-time
   ttlMs: 20_000,
   keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
-    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, startMinute, mode: "withPlanStop", dataType:"status", });
+    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, startMinute, mode: "withPlanStop", dataType:"status", }); //*runtime in current shift date calculated by status
     const result = await dbms.query(sql);
     return result[1] > 0 ? result[0] : [];
   },
