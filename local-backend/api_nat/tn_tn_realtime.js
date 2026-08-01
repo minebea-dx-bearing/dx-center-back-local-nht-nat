@@ -14,10 +14,8 @@ const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const store = require("./_store_tn");
 
-const startTime = 5;
-
-const prepareRealtimeData = (machines, runningTimeData, now, startMinute = 30) => {
-  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime, startMinute);
+const prepareRealtimeData = (machines, runningTimeData, now, startHour = 5 ,startMinute = 30) => {
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startHour, startMinute);
 
   return Object.values(machines).map((item) => {
     const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");

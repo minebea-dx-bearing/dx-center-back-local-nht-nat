@@ -23,9 +23,14 @@ const { createMasterCache } = require("../util/masterStorage");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { prepareRealtimeData } = require("./tn_tn_realtime");
 
-const DIV = "nat";
+const FACTORY = "nat";
 const PROCESS = "tn"; // matches master_mc_storage_tb.process and the rt_* key segment, both lowercase
-const START_MINUTE = 0; // 05:00 — matches where the Redis counters reset
+// Shift start for the Redis counters: 05:00. Stated explicitly here rather than
+// inherited from tn_tn_realtime.js's module-level `startTime` — that file's
+// value (also 5) is a coincidence, not a guarantee, and prepareRealtimeData's
+// signature makes both hour and minute explicit for exactly this reason.
+const START_HOUR = 5;
+const START_MINUTE = 0;
 const MASTER_TABLE = `[${process.env.MASTER_DB}].[dbo].[master_mc_storage_tb]`;
 
 const redis = getRedis();
@@ -34,7 +39,7 @@ const masterCache = createMasterCache({ dbms, table: MASTER_TABLE, process: PROC
 /** master ⊕ live, shaped exactly as prepareRealtimeData expects. */
 const getMachines = async () => {
   const master = await masterCache.get();
-  const live = await readLiveFields(redis, master.map((m) => m.mc_no), { div: DIV, process: PROCESS });
+  const live = await readLiveFields(redis, master.map((m) => m.mc_no), { div: FACTORY, process: PROCESS });
 
   return master.map((m) => ({
     ...m,
@@ -43,7 +48,8 @@ const getMachines = async () => {
   }));
 };
 
-const prepare = (machines, runningTime, now) => prepareRealtimeData(machines, runningTime, now, START_MINUTE);
+const prepare = (machines, runningTime, now) =>
+  prepareRealtimeData(machines, runningTime, now, START_HOUR, START_MINUTE);
 
 router.get(
   "/machines",
