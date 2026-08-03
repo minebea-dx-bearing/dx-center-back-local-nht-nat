@@ -50,7 +50,7 @@ const getMachines = async () => {
 
 const prepare = (machines, runningTime, now) =>
   prepareRealtimeData(machines, runningTime, now, START_HOUR, START_MINUTE);
-
+// !need query parameter list machines and process to prevent heavy query 
 router.get(
   "/machines",
   makeMachinesHandler({
