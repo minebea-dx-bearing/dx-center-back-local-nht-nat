@@ -58,6 +58,10 @@ router.get(
     getRunningTime: async () => [], // OEE not rendered; see plan
     prepareRealtimeData: prepare,
     summary: "standard",
+    // Upstream writes to Redis roughly every ~15s (measured), so a 5s shared
+    // snapshot costs no freshness while making Redis load independent of how
+    // many dashboards are open.
+    cacheMs: 5_000,
   }),
 );
 

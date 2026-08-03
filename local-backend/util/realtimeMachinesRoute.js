@@ -20,6 +20,10 @@
  */
 
 const moment = require("moment");
+const zlib = require("zlib");
+const { promisify } = require("util");
+
+const gzip = promisify(zlib.gzip);
 
 const SUMMARY_FIELDS = {
   standard: { target: "target_pd", total: "total_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
@@ -55,18 +59,65 @@ const summarize = (dataArray, fields) => {
   };
 };
 
-const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary }) => {
+/**
+ * @param {number} [cacheMs] When set, all callers within the window share ONE
+ *   computed response. Every dashboard polls on the same wall-clock second
+ *   (`ss === 0`), so N open tabs arrive as N simultaneous requests asking the
+ *   identical question — without this, each one independently re-reads the data
+ *   source and re-serializes. Defaults to 0 (no caching), so the 17 existing
+ *   routes are unaffected.
+ */
+const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary, cacheMs = 0 }) => {
   const fields = summary ? SUMMARY_FIELDS[summary] : null;
   if (summary && !fields) throw new Error(`makeMachinesHandler: unknown summary "${summary}"`);
 
+  // Cache the SERIALIZED body: JSON.stringify over every machine is the real
+  // per-request CPU cost once viewer count is high.
+  let cache = { at: 0, payload: null, inflight: null };
+
+  const build = async () => {
+    const now = moment();
+    const [machines, runningTime] = await Promise.all([Promise.resolve(getMachines()), getRunningTime()]);
+    const dataArray = await prepareRealtimeData(machines, runningTime, now);
+    const body = { success: true, data: dataArray };
+    if (fields) body.resultSummary = summarize(dataArray, fields);
+    const json = JSON.stringify(body);
+
+    // Compress ONCE per tick, not once per response. Per-request gzip
+    // (e.g. compression() middleware) inverts at high viewer counts: the CPU
+    // spent compressing N identical bodies costs more than the bandwidth saved.
+    // Only worth it when a cache exists to amortise it across viewers.
+    const gz = cacheMs ? await gzip(json) : null;
+    return { json, gz };
+  };
+
+  /** Single-flight: a burst arriving on a cold cache triggers ONE build, not N. */
+  const getPayload = () => {
+    if (!cacheMs) return build();
+    if (cache.payload && Date.now() - cache.at < cacheMs) return Promise.resolve(cache.payload);
+    if (cache.inflight) return cache.inflight;
+
+    const inflight = build().then((payload) => {
+      cache = { at: Date.now(), payload, inflight: null };
+      return payload;
+    });
+
+    cache = { ...cache, inflight };
+    inflight.catch(() => {
+      if (cache.inflight === inflight) cache.inflight = null;
+    });
+    return inflight;
+  };
+
   return async (req, res) => {
     try {
-      const now = moment();
-      const [machines, runningTime] = await Promise.all([Promise.resolve(getMachines()), getRunningTime()]);
-      const dataArray = await prepareRealtimeData(machines, runningTime, now);
-      const body = { success: true, data: dataArray };
-      if (fields) body.resultSummary = summarize(dataArray, fields);
-      res.json(body);
+      const { json, gz } = await getPayload();
+      res.type("json").vary("Accept-Encoding");
+
+      if (gz && /\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
+        return res.set("Content-Encoding", "gzip").send(gz);
+      }
+      return res.send(json);
     } catch (error) {
       console.error("API Error in /machines: ", error);
       res.status(500).json({ success: false, message: "Internal Server Error" });
