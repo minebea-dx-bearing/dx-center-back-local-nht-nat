@@ -35,6 +35,26 @@ const SUMMARY_FIELDS = {
   sSpindle: { target: "s_target_pd", total: "s_total_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "s_oee" },
 };
 
+/**
+ * Divisor for the averages: machines actually reporting, not rows present.
+ *
+ * Routes like assy_alu pad their array with placeholder `SIGNAL LOSE` rows for
+ * machines that never checked in, and carry the pre-padding machine list on
+ * every row as `curr_mc_no`. Averaging over the padded rows would drag every
+ * figure toward zero, so those rows are excluded.
+ *
+ * Counted against the rows being summarized rather than reading
+ * `curr_mc_no.length` directly: under `?machines=` filtering the row set is a
+ * subset, and the plant-wide online count is the wrong divisor for it.
+ */
+const countReporting = (rows) => {
+  const reporting = rows[0]?.curr_mc_no;
+  if (!reporting) return rows.length;
+
+  const online = new Set(reporting);
+  return rows.filter((r) => online.has(r.mc_no)).length;
+};
+
 const summarize = (dataArray, fields) => {
   const acc = dataArray.reduce(
     (a, item) => {
@@ -43,16 +63,12 @@ const summarize = (dataArray, fields) => {
       a.total_cycle_t += item[fields.ct] || 0;
       a.total_utl += item[fields.utl] || 0;
       a.total_oee *= (item[fields.oee] / 100) || 1;
-      if(dataArray[0].curr_mc_no) {
-        a.count = dataArray[0].curr_mc_no.length;
-      }
-      else{
-        a.count += 1
-      }
       return a;
     },
-    { total_target: 0, total_pd: 0, total_cycle_t: 0, total_utl: 0, count: 0, total_oee: 1 },
+    { total_target: 0, total_pd: 0, total_cycle_t: 0, total_utl: 0, total_oee: 1 },
   );
+
+  acc.count = countReporting(dataArray);
 
   return {
     sum_target: acc.total_target,
