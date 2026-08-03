@@ -69,6 +69,24 @@ router.get(
   }),
 );
 
+/**
+ * Machine list for the dashboard's filter selector, so the frontend can build a
+ * `?machines=` query without first downloading every machine's live data.
+ *
+ * Served straight from masterCache: this is master data, already cached
+ * indefinitely and already invalidated by /master/reload below. No snapshot
+ * cache here — the payload is small and the read never touches Redis.
+ */
+router.get("/available", async (req, res) => {
+  try {
+    const master = await masterCache.get();
+    res.json({ success: true, data: master.map(({ mc_no, part_no }) => ({ mc_no, part_no })) });
+  } catch (error) {
+    console.error("API Error in /available: ", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
 /** Called by the master-edit API after a successful write to master_mc_storage_tb. */
 router.post("/master/reload", (req, res) => {
   masterCache.invalidate();
