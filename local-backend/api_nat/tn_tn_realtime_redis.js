@@ -57,9 +57,17 @@ router.get(
     getRunningTime: async () => [], // OEE not rendered; see plan
     prepareRealtimeData: prepare,
     summary: "standard",
-    // Upstream writes to Redis roughly every ~15s (measured), so a 5s shared
-    // snapshot costs no freshness while making Redis load independent of how
-    // many dashboards are open.
+    // 5s is a deliberate freshness floor, not a rate chosen to sit under the
+    // writes. Upstream write interval is per-machine and cycle-driven, not
+    // fixed: measured over 90s, tb17 changed every ~2s (min 1, max 3) while
+    // tb22 averaged ~11s (min 1, max 18). rt_status/rt_alarm are edge-
+    // triggered and may not change for minutes.
+    //
+    // So a fast machine produces ~2-3 values per window and viewers see only
+    // the last. Acceptable here because the cards render cumulative counters
+    // and averages, not a per-cycle event log — dropping intermediate values
+    // changes nothing on screen. Do NOT reuse this reasoning for a view that
+    // needs every cycle.
     cacheMs: 5_000,
     // `?machines=a,b,c` — a dashboard receives only the machines it renders.
     // The Redis read and derive still happen once per tick regardless of how
