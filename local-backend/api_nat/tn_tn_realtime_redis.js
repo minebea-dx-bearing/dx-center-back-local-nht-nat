@@ -17,7 +17,7 @@ const express = require("express");
 const router = express.Router();
 
 const dbms = require("../instance/ms_instance_nat");
-const { getRedis } = require("../util/redisClient");
+const { getRedis } = require("../instance/redisClient");
 const { readLiveFields } = require("../util/redisRealtimeReader");
 const { createMasterCache } = require("../util/masterStorage");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
