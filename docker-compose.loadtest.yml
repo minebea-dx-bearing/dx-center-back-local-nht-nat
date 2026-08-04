@@ -50,6 +50,7 @@ services:
     volumes:
       - ./local-backend:/app
       - /app/node_modules
+      - ./loadtest:/loadtest
     environment:
       TZ: Asia/Bangkok
       # Async gzip runs on the libuv threadpool; 4 is the default ceiling and
