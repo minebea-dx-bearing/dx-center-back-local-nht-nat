@@ -14,23 +14,14 @@ require("dotenv").config({ path: "/app/.env.loadtest" });
 
 const { Sequelize } = require("sequelize");
 const { createClient } = require("redis");
+const { PROCESS, COUNT, mulberry32, devices, entry: fixtureEntry } = require("./fixture");
 
-const COUNT = Number(process.env.MACHINE_COUNT || 1000);
 const DIV = "nat";
-const PROCESS = "tn";
 const DB = process.env.MASTER_DB;
 
 // Fixed seed: two runs must produce identical data, or two runs are not
 // comparable. Math.random() here would make every sweep a different test.
-const mulberry32 = (a) => () => {
-  a |= 0; a = (a + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
 const rnd = mulberry32(42);
-
-const devices = Array.from({ length: COUNT }, (_, i) => `tb${String(i + 1).padStart(4, "0")}`);
 
 // ---------------------------------------------------------------------------
 // MSSQL: database, table, 1000 master rows
@@ -88,16 +79,7 @@ const seedMaster = async () => {
 // Redis: rt_data / rt_status / rt_alarm / rt_mqtt
 // ---------------------------------------------------------------------------
 
-const entry = (type, device, payload) =>
-  JSON.stringify({
-    device,
-    div: DIV,
-    process: PROCESS,
-    topic: `${type}/${DIV}/${PROCESS}/${device}`,
-    timestamp: new Date().toISOString(),
-    // Double-encoded on purpose. redisRealtimeReader.decodeEntry parses twice.
-    payload: JSON.stringify(payload),
-  });
+const entry = fixtureEntry;
 
 const seedRedis = async () => {
   const redis = createClient({ url: process.env.NAT_REDIS_URL });

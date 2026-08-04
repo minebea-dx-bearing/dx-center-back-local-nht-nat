@@ -64,6 +64,29 @@ services:
       mosquitto:
         condition: service_started
 
+  writer:
+    image: backend-dx_center
+    container_name: writer-loadtest
+    # Behind a profile so `up` does not start it. Task 3's idle baseline must be
+    # measured with the writer OFF, or the baseline includes the writer.
+    profiles: ["writer"]
+    env_file:
+      - ./local-backend/.env.loadtest
+    volumes:
+      - ./local-backend:/app
+      - ./loadtest:/loadtest
+      - /app/node_modules
+    environment:
+      TZ: Asia/Bangkok
+      # writer.js lives outside /app, so plain module resolution (which walks up
+      # from the script's own directory) never reaches /app/node_modules.
+      NODE_PATH: /app/node_modules
+    working_dir: /loadtest
+    command: ["node", "/loadtest/writer.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
   k6:
     image: grafana/k6:latest
     # Started manually per run, never with `up`.
