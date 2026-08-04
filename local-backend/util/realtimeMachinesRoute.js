@@ -29,6 +29,30 @@ const gzip = promisify(zlib.gzip);
 /** Cap on distinct filter payloads held at once. Bounds memory; see normalize(). */
 const FILTER_CACHE_MAX = 256;
 
+/** Default ceiling on machines per `?machines=` filter. See normalize(). */
+const FILTER_MAX_NAMES = 500;
+
+/**
+ * Reject after `ms` instead of waiting forever. `ms = 0` disables it entirely.
+ *
+ * The underlying work is NOT cancelled — node cannot — but the cache stops
+ * joining it. Without this a Redis or SQL call that hangs rather than rejects
+ * leaves `inflight` set forever, so every later request awaits the same dead
+ * promise and the endpoint stays down until restart. The existing `.catch`
+ * guards only cover rejection, which a hang never produces.
+ */
+const withTimeout = (promise, ms, label) => {
+  if (!ms) return promise;
+
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
+
 const SUMMARY_FIELDS = {
   standard: { target: "target_pd", total: "total_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
   fSpindle: { target: "f_target_pd", total: "s_total_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "f_oee" },
@@ -97,8 +121,16 @@ const summarize = (dataArray, fields) => {
  *     once per KEY  : slice -> summarize -> JSON.stringify -> gzip
  *
  *   The expensive upstream read happens once no matter how many distinct
- *   filters are in play. Measured at 50 viewers x 750 of 1000 machines, a full
- *   cold rebuild of 48 distinct filters costs ~110ms — 2% of a 5s tick.
+ *   filters are in play.
+ *
+ * @param {number} [maxFilter] Ceiling on machines per filter. Only meaningful
+ *   with `filterable`.
+ *
+ * @param {number} [timeoutMs] Fail a build that hangs rather than waiting on it
+ *   forever. Defaults to 0 (disabled) so the 17 existing routes keep their
+ *   current behaviour — none of them have been measured, and a route with a
+ *   legitimately slow query should not start returning 500s because of a
+ *   default chosen here. Opt in per route.
  */
 const makeMachinesHandler = ({
   getMachines,
@@ -107,6 +139,8 @@ const makeMachinesHandler = ({
   summary,
   cacheMs = 0,
   filterable = false,
+  maxFilter = FILTER_MAX_NAMES,
+  timeoutMs = 0,
 }) => {
   const fields = summary ? SUMMARY_FIELDS[summary] : null;
   if (summary && !fields) throw new Error(`makeMachinesHandler: unknown summary "${summary}"`);
@@ -119,21 +153,35 @@ const makeMachinesHandler = ({
   const ALL = "__all__";
 
   // ---- Layer 1: the derived rows, shared by every filter in the window ----
-  let rowsCache = { at: 0, rows: null, inflight: null };
+  // `gen` increments once per successful build and is what layer 2 keys its
+  // freshness on, so a serialized payload can never outlive the rows it came
+  // from.
+  let generation = 0;
+  let rowsCache = { at: 0, snapshot: null, inflight: null };
 
   const buildRows = async () => {
     const now = moment();
     const [machines, runningTime] = await Promise.all([Promise.resolve(getMachines()), getRunningTime()]);
-    return prepareRealtimeData(machines, runningTime, now);
+    const rows = await prepareRealtimeData(machines, runningTime, now);
+
+    // Built ONCE per tick. This used to live inside normalize(), which made a
+    // filtered lookup an O(pool) cost paid per REQUEST — 50 viewers x 1000
+    // machines rebuilding the same Map 50 times a tick, defeating the whole
+    // point of the layer split.
+    const byNo = filterable
+      ? new Map(rows.map((r) => [String(r.mc_no).toLowerCase(), r]))
+      : null;
+
+    return { rows, byNo, gen: ++generation };
   };
 
   const getRows = () => {
-    if (rowsCache.rows && Date.now() - rowsCache.at < cacheMs) return Promise.resolve(rowsCache.rows);
+    if (rowsCache.snapshot && Date.now() - rowsCache.at < cacheMs) return Promise.resolve(rowsCache.snapshot);
     if (rowsCache.inflight) return rowsCache.inflight;
 
-    const inflight = buildRows().then((rows) => {
-      rowsCache = { at: Date.now(), rows, inflight: null };
-      return rows;
+    const inflight = withTimeout(buildRows(), timeoutMs, "realtime build").then((snapshot) => {
+      rowsCache = { at: Date.now(), snapshot, inflight: null };
+      return snapshot;
     });
 
     rowsCache = { ...rowsCache, inflight };
@@ -171,27 +219,55 @@ const makeMachinesHandler = ({
    * Unknown names are dropped rather than rejected: that is what bounds key
    * cardinality (a caller cannot mint entries by inventing machine numbers) and
    * it keeps a dashboard alive when a machine leaves the master table.
+   *
+   * Returns `{ error }` for a rejected filter — the two failure modes read
+   * differently to a client and a bare null could not tell them apart.
    */
-  const normalize = (raw, rows) => {
-    if (!filterable || !raw) return { key: ALL, rows };
+  const normalize = (raw, snapshot) => {
+    if (!filterable || !raw) return { key: ALL, rows: snapshot.rows };
 
-    const valid = new Map(rows.map((r) => [String(r.mc_no).toLowerCase(), r]));
-    const names = [...new Set(String(raw).split(",").map((s) => s.trim().toLowerCase()).filter(Boolean))]
-      .filter((n) => valid.has(n))
+    const requested = String(raw).split(",");
+
+    // Checked before any per-name work: a caller sending 5000 junk names should
+    // not have them all trimmed, lowercased and looked up first.
+    //
+    // The real ceiling is the proxy, not us — 1000 names percent-encode to ~9KB
+    // of request line and nginx's default `large_client_header_buffers 4 8k`
+    // rejects that near 900. This makes the limit explicit, ours, and a clear
+    // 400 instead of a 414 from something upstream.
+    if (requested.length > maxFilter) {
+      return { error: `filter too large: ${requested.length} machines requested, limit is ${maxFilter}` };
+    }
+
+    const names = [...new Set(requested.map((s) => s.trim().toLowerCase()).filter(Boolean))]
+      .filter((n) => snapshot.byNo.has(n))
       .sort();
 
-    if (!names.length) return null;
+    if (!names.length) return { error: "no known machines in filter" };
     return {
       key: crypto.createHash("sha1").update(names.join(",")).digest("hex").slice(0, 16),
-      rows: names.map((n) => valid.get(n)),
+      rows: names.map((n) => snapshot.byNo.get(n)),
     };
   };
 
-  /** Single-flight: a burst arriving on a cold cache triggers ONE build, not N. */
-  const getPayload = (key, rows) => {
+  /**
+   * Single-flight: a burst arriving on a cold cache triggers ONE build, not N.
+   *
+   * Validity is the rows generation, NOT a second wall-clock stamp. An entry
+   * serialized late in a tick used to carry its own `at` and keep serving for a
+   * further full cacheMs, so a response could reach 2x cacheMs old and two
+   * filters could drift apart from each other — visibly, as cards disagreeing
+   * on the same dashboard. Tying it to `gen` caps staleness at cacheMs for
+   * every key, and layer 1's window becomes the only freshness knob.
+   *
+   * Entries from a superseded generation are left to age out via the LRU rather
+   * than swept: they are already unreachable as hits, and clearing the map would
+   * discard in-flight builds that other viewers are legitimately waiting on.
+   */
+  const getPayload = (key, gen, rows) => {
     const hit = payloadCache.get(key);
-    if (hit) {
-      if (hit.payload && Date.now() - hit.at < cacheMs) {
+    if (hit && hit.gen === gen) {
+      if (hit.payload) {
         payloadCache.delete(key);
         payloadCache.set(key, hit); // touch, so LRU order stays honest
         return hit.payload;
@@ -200,11 +276,11 @@ const makeMachinesHandler = ({
     }
 
     const inflight = serialize(rows).then((payload) => {
-      payloadCache.set(key, { at: Date.now(), payload, inflight: null });
+      payloadCache.set(key, { gen, payload, inflight: null });
       return payload;
     });
 
-    payloadCache.set(key, { at: 0, payload: null, inflight });
+    payloadCache.set(key, { gen, payload: null, inflight });
     inflight.catch(() => payloadCache.delete(key));
 
     while (payloadCache.size > FILTER_CACHE_MAX) {
@@ -217,16 +293,18 @@ const makeMachinesHandler = ({
     try {
       if (!cacheMs) {
         // Uncached routes keep the original path exactly: build, serialize, send.
-        const { json } = await serialize(await buildRows());
+        const { rows } = await withTimeout(buildRows(), timeoutMs, "realtime build");
+        const { json } = await serialize(rows);
         return res.type("json").vary("Accept-Encoding").send(json);
       }
 
-      const norm = normalize(req.query.machines, await getRows());
-      if (!norm) {
-        return res.status(400).json({ success: false, message: "no known machines in filter" });
+      const snapshot = await getRows();
+      const norm = normalize(req.query.machines, snapshot);
+      if (norm.error) {
+        return res.status(400).json({ success: false, message: norm.error });
       }
 
-      const { json, gz } = await getPayload(norm.key, norm.rows);
+      const { json, gz } = await getPayload(norm.key, snapshot.gen, norm.rows);
       res.type("json").vary("Accept-Encoding");
 
       if (gz && /\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
