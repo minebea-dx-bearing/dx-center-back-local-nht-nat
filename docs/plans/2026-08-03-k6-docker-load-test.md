@@ -2,9 +2,9 @@
 
 > **For Claude:** Use `skills/collaboration/executing-plans` to implement this plan task-by-task.
 
-**Goal:** Build a self-contained Docker stack that runs the real backend against a seeded 1000-machine Redis and MSSQL, then drive it with k6 to find how many concurrent dashboard viewers the `?machines=` filtered route sustains inside its 5-second tick budget.
+**Goal:** Build a self-contained Docker stack that runs the real backend against a seeded 1000-machine Redis and MSSQL, then drive it with k6 to confirm the `?machines=` filtered route serves **50 concurrent dashboard viewers × 1000 machines** inside its 5-second tick budget, measured against the real route rather than a reimplementation of it. Viewer target confirmed 2026-08-04 — see Decisions.
 
-**Architecture:** A `docker-compose.loadtest.yml` overlay adds `redis`, `mssql`, and `mosquitto` services alongside the existing `backend` service, wired together on a private network so nothing touches production infrastructure. A one-shot seeder (run inside the backend container, reusing its existing `redis` and `sequelize` dependencies) populates 1000 master rows and 1000 devices' worth of `rt_*` hash entries. A `k6` container then fires wall-clock-aligned 5-second bursts, each virtual user requesting a different `?machines=` subset, while `docker stats` samples the backend container's CPU and memory.
+**Architecture:** A `docker-compose.loadtest.yml` overlay adds `redis`, `mssql`, and `mosquitto` services alongside the existing `backend` service, wired together on a private network so nothing touches production infrastructure. A one-shot seeder (run inside the backend container, reusing its existing `redis` and `sequelize` dependencies) populates 1000 master rows and 1000 devices' worth of `rt_*` hash entries, and a `writer` container then keeps those entries moving at the measured per-machine cadence so the fixture does not go stale mid-sweep. A `k6` container then fires wall-clock-aligned 5-second bursts, each virtual user requesting a different `?machines=` subset, while `docker stats` samples the backend container's CPU and memory.
 
 **Tech Stack:** Docker Compose v2, k6 (`grafana/k6` image), Redis 7, MSSQL Server 2022, Eclipse Mosquitto, Node 18, Sequelize/tedious, node-redis.
 
@@ -206,6 +206,13 @@ services:
     image: grafana/k6:latest
     # Started manually per run, never with `up`.
     profiles: ["tools"]
+    # Capped so the load generator cannot outcompete the backend for host CPU.
+    # Uncapped, a laptop reports latency that is really contention between k6 and
+    # the thing it is measuring — and it reports it as a backend problem. The
+    # cost is a lower achievable load ceiling, which is acceptable here because
+    # the pass target is 50 viewers (see Decisions), far below what 2 cores of k6
+    # can generate.
+    cpus: 2
     volumes:
       - ./loadtest:/scripts
     environment:
@@ -482,6 +489,270 @@ git commit -m "test: seed 1000 machines into load-test redis and mssql"
 
 ---
 
+## Task 4b: Keep the fixture alive with a writer
+
+**Files:**
+- Create: `loadtest/fixture.js`
+- Create: `loadtest/writer.js`
+- Modify: `loadtest/seed.js`, `docker-compose.loadtest.yml`
+
+Task 4 leaves a **frozen** fixture, and frozen is not merely less realistic — it is wrong in a way that breaks the test outright. `util/determineMachineStatus.js:14` returns `SIGNAL LOST` when `updated_at` is more than 10 minutes old. A static seed therefore flips all 1000 machines to `SIGNAL LOST` ten minutes after seeding, simultaneously, and every sweep started after that point measures the SIGNAL LOST branch for every machine. The sweep in Task 6 runs twelve scenarios; the early ones and the late ones would not be measuring the same thing.
+
+A writer fixes that, and gets three more things for free: `rt_data` payload entropy stays in steady state (so the gzip ratio is the real one, not one frozen snapshot's), counters accumulate so `target_pd`/`curr_utl` derive from a moving baseline, and Redis is under concurrent write load while being read.
+
+**What this deliberately does *not* test:** `cacheMs: 5_000` in the route is time-based, not invalidation-based. A live writer does not change the cache hit rate or the number of Layer 1 reads per tick — those stay identical. Do not expect the writer to move p95. If it does, that is a finding, not the goal.
+
+**Step 1: Extract the shared fixture vocabulary**
+
+`writer.js` needs the same device list, the same seeded RNG, and — critically — the same double-encoded `entry()` as `seed.js`. Copy-pasting `entry()` is the one duplication that must not happen here: two copies means one can drift, and a drifted encoding fails silently as an all-offline dashboard (Task 4, Step 1). Extract rather than duplicate, at two occurrences rather than three, for that reason.
+
+Move `mulberry32`, `devices`, `DIV`/`PROCESS`, and `entry` out of `seed.js` into `loadtest/fixture.js`:
+
+```js
+/** Shared fixture vocabulary for seed.js and writer.js. */
+const DIV = "nat";
+const PROCESS = "tn";
+const COUNT = Number(process.env.MACHINE_COUNT || 1000);
+
+const mulberry32 = (a) => () => {
+  a |= 0; a = (a + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const devices = Array.from({ length: COUNT }, (_, i) => `tb${String(i + 1).padStart(4, "0")}`);
+
+const key = (type, device) => `${type}/${DIV}/${PROCESS}/${device}`;
+
+/** Double-encoded on purpose. redisRealtimeReader.decodeEntry parses twice. */
+const entry = (type, device, payload) =>
+  JSON.stringify({
+    device,
+    div: DIV,
+    process: PROCESS,
+    topic: key(type, device),
+    timestamp: new Date().toISOString(),
+    payload: JSON.stringify(payload),
+  });
+
+module.exports = { DIV, PROCESS, COUNT, mulberry32, devices, key, entry };
+```
+
+Then have `seed.js` require it and delete its local copies. Re-run the Task 4 Step 5 verification afterwards — the refactor must leave `machines: 1000` with real values, unchanged.
+
+**Step 2: Write the writer**
+
+```js
+/**
+ * Keeps the load-test rt_* hashes moving, at the per-machine cadence measured
+ * against live Redis on 2026-08-03: tb17 ~2s (min 1, max 3), tb22 ~11s
+ * (min 1, max 18). Per-machine and cycle-driven, NOT a fixed publisher rate.
+ *
+ * Runs in its own container so its CPU never lands in backend-loadtest's
+ * `docker stats` numbers.
+ *
+ *   docker compose -f docker-compose.loadtest.yml --profile writer up -d writer
+ */
+require("dotenv").config({ path: "/app/.env.loadtest" });
+
+const { createClient } = require("redis");
+const { devices, key, entry, mulberry32 } = require("./fixture");
+const { decodeEntry } = require("/app/util/redisRealtimeReader");
+
+// Distinct from seed.js's seed(42) so the writer's schedule is independent of
+// the fixture values, and logged so a run can be reproduced exactly.
+const SEED = Number(process.env.WRITER_SEED || 1337);
+const rnd = mulberry32(SEED);
+
+const TICK_MS = 100; // batching window, not a per-machine rate
+
+/**
+ * Skewed toward fast machines, spanning the measured 1-18s range. Squaring the
+ * uniform draw puts the mass near the low end, matching a plant where most
+ * machines cycle quickly and a few are slow. A uniform draw would make the mean
+ * interval ~9s and halve the write rate.
+ */
+const drawInterval = () => 1000 + Math.round(rnd() ** 2 * 17000);
+
+/** Resume from what seed.js wrote, so counters stay continuous across a restart. */
+const loadState = async (redis) => {
+  const raw = await redis.hmGet("rt_data", devices.map((d) => key("data", d)));
+  const now = Date.now();
+  return devices.map((device, i) => {
+    const p = decodeEntry(raw[i])?.payload || {};
+    const intervalMs = drawInterval();
+    return {
+      device,
+      intervalMs,
+      // Stagger the first tick across one full interval. Without this all 1000
+      // machines fire on tick 0 and the write rate oscillates for minutes.
+      nextAt: now + Math.floor(rnd() * intervalMs),
+      prod_pos4: Number(p.prod_pos4) || 0,
+      prod_pos6: Number(p.prod_pos6) || 0,
+      prod_drop_pos4: Number(p.prod_drop_pos4) || 0,
+      prod_drop_pos6: Number(p.prod_drop_pos6) || 0,
+      model: p.model || `MDL-${Math.floor(rnd() * 900 + 100)}`,
+      status: "RUN",
+      alarm: "NORMAL",
+    };
+  });
+};
+
+const machines = [];
+let written = 0;
+
+const tick = async (redis) => {
+  const now = Date.now();
+  const data = {}, status = {}, alarm = {};
+
+  for (const m of machines) {
+    if (now < m.nextAt) continue;
+    // Jitter the NEXT interval rather than re-drawing it: a machine's cadence is
+    // a property of its cycle, so it should stay recognizably itself run to run.
+    m.nextAt = now + Math.round(m.intervalMs * (0.8 + rnd() * 0.4));
+
+    // MONOTONIC. These are cumulative-since-05:00 counters; a random walk that
+    // decreases produces negative deltas downstream — silent garbage, no error.
+    m.prod_pos4 += 1;
+    m.prod_pos6 += 1;
+    if (rnd() < 0.02) m.prod_drop_pos4 += 1;
+    if (rnd() < 0.02) m.prod_drop_pos6 += 1;
+
+    data[key("data", m.device)] = entry("data", m.device, {
+      prod_pos4: m.prod_pos4,
+      prod_pos6: m.prod_pos6,
+      prod_drop_pos4: m.prod_drop_pos4,
+      prod_drop_pos6: m.prod_drop_pos6,
+      cycle_t: Number((1.0 + rnd() * 3).toFixed(3)),
+      model: m.model,
+    });
+
+    // Edge-triggered: rt_status and rt_alarm can sit unchanged for minutes, so
+    // they are written only on transition, not on every data tick. Writing them
+    // every tick would triple the write rate against observed behavior.
+    if (rnd() < 0.002) {
+      m.status = m.status === "RUN" ? "STOP" : "RUN";
+      status[key("status", m.device)] = entry("status", m.device, { status: m.status });
+    }
+    if (rnd() < 0.001) {
+      m.alarm = m.alarm === "NORMAL" ? "ALARM" : "NORMAL";
+      alarm[key("alarm", m.device)] = entry("alarm", m.device, { status: m.alarm });
+    }
+  }
+
+  const writes = [];
+  if (Object.keys(data).length) writes.push(redis.hSet("rt_data", data));
+  if (Object.keys(status).length) writes.push(redis.hSet("rt_status", status));
+  if (Object.keys(alarm).length) writes.push(redis.hSet("rt_alarm", alarm));
+  if (writes.length) await Promise.all(writes);
+
+  written += Object.keys(data).length;
+};
+
+(async () => {
+  const redis = createClient({ url: process.env.NAT_REDIS_URL });
+  await redis.connect();
+  machines.push(...(await loadState(redis)));
+
+  const mean = machines.reduce((s, m) => s + m.intervalMs, 0) / machines.length;
+  console.log(`[writer] seed=${SEED} machines=${machines.length} meanInterval=${Math.round(mean)}ms expected=${(machines.length / (mean / 1000)).toFixed(0)} writes/s`);
+
+  let busy = false;
+  setInterval(async () => {
+    // Never overlap ticks: a slow Redis would otherwise queue writers behind
+    // each other and the reported rate would stop meaning anything.
+    if (busy) return;
+    busy = true;
+    try { await tick(redis); } catch (e) { console.error("[writer]", e.message); }
+    busy = false;
+  }, TICK_MS);
+
+  setInterval(() => {
+    console.log(`[writer] ${(written / 10).toFixed(1)} writes/s`);
+    written = 0;
+  }, 10_000);
+})().catch((e) => { console.error(e); process.exit(1); });
+```
+
+**Step 3: Add the writer service**
+
+In `docker-compose.loadtest.yml`, alongside `backend`:
+
+```yaml
+  writer:
+    image: backend-dx_center
+    container_name: writer-loadtest
+    # Behind a profile so `up` does not start it. Task 3's idle baseline must be
+    # measured with the writer OFF, or the baseline includes the writer.
+    profiles: ["writer"]
+    env_file:
+      - ./local-backend/.env.loadtest
+    volumes:
+      - ./local-backend:/app
+      - ./loadtest:/loadtest
+      - /app/node_modules
+    environment:
+      TZ: Asia/Bangkok
+    working_dir: /loadtest
+    command: ["node", "/loadtest/writer.js"]
+    depends_on:
+      redis:
+        condition: service_healthy
+```
+
+Also add `- ./loadtest:/loadtest` to `backend` if Task 4 Step 3 has not already.
+
+**Step 4: Verify it is actually incrementing**
+
+```bash
+docker compose -f docker-compose.loadtest.yml --profile writer up -d writer
+docker compose -f docker-compose.loadtest.yml logs -f writer   # expect ~200-300 writes/s at 1000 machines
+```
+
+Then confirm the values move and only ever move up:
+
+```bash
+for i in 1 2 3; do
+  docker compose -f docker-compose.loadtest.yml exec redis \
+    redis-cli HGET rt_data "data/nat/tn/tb0017" | head -c 200; echo
+  sleep 6
+done
+```
+
+Expected: `prod_pos4` **strictly increases** across the three samples and `timestamp` advances. A value that ever decreases is the monotonicity bug the writer comments warn about — fix it before running any sweep, because it does not raise an error.
+
+**Step 5: The gate that justifies this task**
+
+Leave the writer running for 12 minutes, then:
+
+```bash
+curl -s "http://localhost:8009/nat/tn/tn-realtime-redis/machines" \
+  | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const b=JSON.parse(s);const lost=b.data.filter(m=>m.status==='SIGNAL LOST').length;console.log('SIGNAL LOST:',lost,'of',b.data.length)})"
+```
+
+Expected: **0 of 1000**. Run the same command against a stack with the writer stopped for 12 minutes and it returns 1000 of 1000 — that contrast is the whole point of the task, and is worth recording in Task 7's documentation.
+
+**Step 6: Sequencing for Task 6**
+
+Start the writer before the sweep and leave it up for the whole sweep, so every scenario sees the same conditions:
+
+```bash
+docker compose -f docker-compose.loadtest.yml --profile writer up -d writer
+bash loadtest/run-sweep.sh
+```
+
+Sample `writer-loadtest` and `redis` in `docker stats` too, not just `backend-loadtest`. If Redis CPU is material, the backend's read latency includes contention — which is realistic and wanted, but must be *known* rather than discovered later.
+
+**Step 7: Commit**
+
+```bash
+git add loadtest/fixture.js loadtest/writer.js loadtest/seed.js docker-compose.loadtest.yml
+git commit -m "test: drive load-test redis with a live per-machine writer"
+```
+
+---
+
 ## Task 5: Write the k6 script
 
 **Files:**
@@ -620,8 +891,11 @@ COMPOSE="docker compose -f docker-compose.loadtest.yml"
 OUT="loadtest/results/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 
-for VIEWERS in 50 200 500; do
-  for K in 100 250 500 0; do   # 0 = unfiltered worst case
+# 50 viewers is the actual production target; 200 is a 4x headroom probe, kept
+# only so a future growth question has a data point. Anything above that was
+# dropped once the target was confirmed — see Decisions.
+for VIEWERS in 50 200; do
+  for K in 250 500 0; do   # 0 = unfiltered worst case, i.e. all 1000 machines
     NAME="v${VIEWERS}-k${K}"
     echo "=== $NAME ==="
 
@@ -655,7 +929,9 @@ chmod +x loadtest/run-sweep.sh
 ./loadtest/run-sweep.sh
 ```
 
-Expect roughly 12 runs × ~75s ≈ 15-20 minutes.
+Expect roughly 6 runs × ~75s ≈ 8-10 minutes.
+
+**The pass/fail run is `v50-k0`** — 50 viewers each pulling all 1000 machines. If its p95 sits inside the tick budget with headroom, the production requirement is met and everything else in the grid is context. Report that run first, not last.
 
 **Step 3: Read the results honestly**
 
@@ -670,7 +946,7 @@ For each run, record:
 | peak CPU% | `.stats` file | Above ~90% × cores means saturation |
 | MEM growth | `.stats` file | Should plateau. Continuous growth across runs = leak |
 
-**The knee is where p95 stops being flat**, not where it crosses an arbitrary line. Report the largest (VIEWERS, K) whose p95 stays inside the tick budget, and state the limiting resource — CPU, threadpool, or bandwidth.
+Report `v50-k0` against the tick budget first — that is the requirement. Then, as secondary context, note whether p95 is still flat at `v200-k0`; **the knee is where p95 stops being flat**, not where it crosses an arbitrary line. If no knee appears anywhere in the grid, say so and state the limiting resource you would expect to bind first — CPU, threadpool, or bandwidth. Do not extrapolate a ceiling from six points that all sat flat.
 
 **Step 4: Sanity-check against the load generator itself**
 
@@ -720,20 +996,245 @@ git commit -m "docs: update scaling and load-testing docs for machine filtering"
 
 ---
 
+## Task 8: Two-hour soak
+
+**Files:**
+- Create: `loadtest/soak.js`, `loadtest/run-soak.sh`
+
+Run this only after Task 6 has passed. A 75-second run cannot distinguish "memory plateaued" from "memory is growing slowly", and the thing most likely to grow slowly is the one thing Task 6 never pressures: the LRU payload cache.
+
+**Step 1: Make the soak churn cache keys, or it tests nothing**
+
+This is the design decision that matters. If 50 VUs each hold one fixed `?machines=` subset for two hours, the cache reaches 50 keys in the first tick and never evicts again — the run would prove the harness can idle, not that the cache is bounded. `FILTER_CACHE_MAX = 256`, so the soak must push distinct normalized keys well past 256 and keep pushing.
+
+Copy `viewers.js` to `soak.js` and change the subset selection so each VU **re-draws its machine subset every N ticks** (N = 12, i.e. once a minute). Over two hours that is ~120 distinct keys per VU, ~6000 total against a 256-entry bound — sustained eviction pressure for the whole run. Keep the wall-clock 5-second alignment and the `wrong_machine_count` check unchanged; correctness must hold across evictions, and a stale slice served after an eviction is exactly the bug this would catch.
+
+**Step 2: Run it**
+
+Writer up for the whole duration, load fixed at the production shape rather than the ceiling — this is a duration test, not a capacity test.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+COMPOSE="docker compose -f docker-compose.loadtest.yml"
+OUT="loadtest/results/soak-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUT"
+
+$COMPOSE --profile writer up -d writer
+
+# 30s sampling: 240 points over 2h is enough to see a trend and small enough to
+# eyeball. Both containers, because a writer leak would otherwise read as a
+# backend leak.
+( while true; do
+    echo "$(date +%s),$(docker stats --no-stream --format '{{.Name}},{{.CPUPerc}},{{.MemUsage}}' backend-loadtest writer-loadtest | tr '\n' ',')"
+    sleep 30
+  done ) > "$OUT/soak.stats" 2>/dev/null &
+STATS_PID=$!
+
+$COMPOSE run --rm -e VIEWERS=50 -e K=0 -e DURATION=2h -e RESUBSCRIBE_TICKS=12 \
+  k6 run --summary-export="/scripts/results/$(basename "$OUT")/soak.json" \
+  /scripts/soak.js 2>&1 | tee "$OUT/soak.log"
+
+kill $STATS_PID 2>/dev/null || true
+echo "results in $OUT"
+```
+
+**Step 3: Read it**
+
+| Signal | Pass | Fail means |
+|---|---|---|
+| backend RSS, last 30 min vs. minutes 30-60 | flat within ~5% | Leak. Suspect the LRU not evicting, or entries retained by a closure |
+| `http_req_duration p(95)`, first 15 min vs. last 15 min | no upward trend | Degradation under sustained eviction — GC pressure or cache thrash |
+| `wrong_machine_count` | 0 for the entire run | A slice served from a key it does not belong to. Stop everything and fix |
+| writer `writes/s` | steady | Writer drift; write-side numbers unusable |
+
+**A sawtooth RSS profile is a pass, not a failure** — that is GC doing its job. The failure shape is a rising floor: each sawtooth trough higher than the last.
+
+**Step 4: Commit**
+
+```bash
+git add loadtest/soak.js loadtest/run-soak.sh
+git commit -m "test: add two-hour soak run for cache-eviction memory behavior"
+```
+
+---
+
+## Task 9: Measure the MQTT route and compare
+
+**Files:** create `loadtest/store_tn_mqtt.js`, `loadtest/server-mqtt.js`, `loadtest/run-compare.sh`; modify `loadtest/writer.js`, `docker-compose.loadtest.yml`.
+
+`api_nat/tn_tn_realtime.js` is the route in production today, and it is the one this whole Redis prototype is arguing against. That argument currently rests on reading its config rather than on a number. This task produces the number.
+
+The difference is entirely in how `makeMachinesHandler` is called. `tn_tn_realtime.js:96-103` passes no `cacheMs`, no `filterable`, no `timeoutMs`, so it takes the uncached branch at `realtimeMachinesRoute.js:275-279` — build, serialize, send, per request. Per *request*, not per tick. At 50 viewers that means 50 `prepareRealtimeData` passes over 1000 machines and 50 `JSON.stringify` calls of a ~580KB body every 5 seconds, on one event loop, with no gzip (`serialize` returns `gz: null` when `cacheMs` is 0). The expected result is not in doubt. What is not known, and what makes this worth running, is the *size* of the gap and whether the bottleneck is CPU or bandwidth — those imply different migration urgencies.
+
+**The comparison is only worth anything if both routes get identical inputs.** Three constraints follow, and none of them are optional:
+
+- Same master rows — both sides read the `master_mc_storage_tb` the Task 4 seeder wrote, through the same `createMasterCache`.
+- Same live values — the Task 4b writer publishes each tick to *both* Redis and MQTT, so the two routes are serving the same numbers at the same instant.
+- Same `getRunningTime` — both pass `async () => []`. The real `_store_tn.js` runs a SQL query here, but it sits behind a 20-second TTL with single-flight coalescing (`runningTimeCache.js:30`), so it is load-*independent*: one query per 20s whether there are 5 viewers or 500. Including it would add a constant to one side and measure MSSQL fixture quality instead of the cache. Excluded deliberately — see the caveat added below.
+
+**Step 1: A load-test store on the real ingest path**
+
+`loadtest/store_tn_mqtt.js` — the only thing faked is where master rows come from. `mqttHub`, `processStore`, the subscribe-and-merge path, and `prepareRealtimeData` are all the production modules, unmodified.
+
+```js
+/**
+ * Stand-in for api_nat/_store_tn.js. Differs in exactly one way: master rows
+ * come from the seeded master_mc_storage_tb instead of the four DATA_*_TN
+ * tables, so this store and the Redis route provably see the same machines.
+ *
+ * Master loading is behind processStore's 5-minute reload interval and is not
+ * in the per-request path, so faking it cannot move the numbers this task
+ * exists to produce.
+ */
+const dbms = require("/app/instance/ms_instance_nat");
+const { getHub } = require("/app/util/mqttHub");
+const { createProcessStore } = require("/app/util/processStore");
+const { createMasterCache } = require("/app/util/masterStorage");
+
+const MASTER_TABLE = `[${process.env.MASTER_DB}].[dbo].[master_mc_storage_tb]`;
+const masterCache = createMasterCache({ dbms, table: MASTER_TABLE, process: "tn" });
+
+const hub = getHub(`mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
+
+const store = createProcessStore({
+  processName: "TN",
+  startHour: 5,
+  hub,
+  masterLoader: () => masterCache.get(),
+});
+
+module.exports = { getSnapshot: store.getSnapshot };
+```
+
+**Step 2: Its own process, on port 8010**
+
+`loadtest/server-mqtt.js` mounts this one route and nothing else. A second container rather than a second route inside `backend-loadtest`, for one reason: `docker stats` reports per container, and two routes in one process would share a CPU number, which is precisely the number being compared.
+
+```js
+const express = require("express");
+const app = express();
+
+const { makeMachinesHandler } = require("/app/util/realtimeMachinesRoute");
+const { prepareRealtimeData } = require("/app/api_nat/tn_tn_realtime");
+const store = require("./store_tn_mqtt");
+
+// Copied verbatim from tn_tn_realtime.js:96-103. If that file's options ever
+// change, this must change with it or the comparison is measuring a route that
+// no longer exists.
+app.get(
+  "/nat/tn/tn-realtime/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getSnapshot(),
+    getRunningTime: async () => [],
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
+
+app.listen(8010, () => console.info("[mqtt-loadtest] listening on 8010"));
+```
+
+**Step 3: Teach the writer to publish**
+
+`loadtest/writer.js` gains `WRITER_TARGETS` (default `redis,mqtt`). Same tick, same drawn values, both destinations — the Redis `hSet` batch and the MQTT publishes carry identical numbers.
+
+Two format differences that will silently produce an all-offline dashboard if missed:
+
+- **MQTT payloads are single-encoded.** `mqttHub.js:75` does one `JSON.parse` on the raw message. Redis is double-encoded (`redisRealtimeReader.js:45`). Publishing the Redis-shaped envelope to MQTT yields an object whose fields are all `undefined`, with no error anywhere.
+- **`mqttHub` takes the last topic segment as `mc_no`** (`mqttHub.js:67`), and `processStore`'s `accepts` requires that string to be a key in `master`. Publish to `data/nat/tn/tb0001`, lowercase, matching the seeded `mc_no` exactly.
+
+Four topics per machine per write, mirroring the four hashes: `data/`, `status/`, `alarm/`, `mqtt/`. The last one matters more than it looks — `broker` reaches the row through `processStore.js:68`, and `determineMachineStatus.js:14` returns `SIGNAL LOST` on `broker === 0`. Publish `{ broker: 1 }`.
+
+**Step 4: Compose service**
+
+```yaml
+  backend-mqtt:
+    image: backend-dx_center
+    container_name: backend-mqtt-loadtest
+    # Same cpus as backend-loadtest. A comparison between containers on
+    # different limits measures the limits.
+    cpus: 4
+    env_file:
+      - ./local-backend/.env.loadtest
+    volumes:
+      - ./local-backend:/app
+      - ./loadtest:/loadtest
+      - /app/node_modules
+    environment:
+      TZ: Asia/Bangkok
+    working_dir: /loadtest
+    command: ["node", "/loadtest/server-mqtt.js"]
+    ports:
+      - "8010:8010"
+    depends_on:
+      mosquitto:
+        condition: service_started
+      mssql:
+        condition: service_healthy
+```
+
+**Step 5: Run both**
+
+`loadtest/run-compare.sh` runs the Task 5 script twice at the same load, changing only `BASE_URL`.
+
+```bash
+# K=0 only. The MQTT route takes the uncached branch before normalize() is ever
+# reached, so `?machines=` is silently ignored and it always returns the full
+# payload. Comparing a filtered Redis run against an unfiltered MQTT one would
+# flatter the cache with work the other side was never asked to do.
+#
+# Consequence for the k6 script: viewers.js asserts wrong_machine_count against
+# the requested subset. At K=0 there is no subset and the check is a no-op, so
+# it stays valid for both. Do NOT raise K here to "make it fairer".
+for TARGET in redis mqtt; do
+  ...  VIEWERS=50 K=0 DURATION=75s
+done
+```
+
+Run with the writer up and both backends warm. Sample `docker stats` for `backend-loadtest` and `backend-mqtt-loadtest` throughout.
+
+**Step 6: Read it**
+
+One table, six numbers:
+
+| Metric | Redis route | MQTT route | Why it matters |
+|---|---|---|---|
+| `http_req_duration p(95)` | fill in | fill in | The viewer-facing number |
+| bytes on the wire per response | gzipped | uncompressed | MQTT route has no gzip at all |
+| Mbit/s at 50 viewers | fill in | fill in | `bytes × 50 ÷ 5s`. Check against the factory LAN, not localhost |
+| container CPU % | fill in | fill in | 1 vs 50 `prepareRealtimeData` passes per tick |
+| container RSS | fill in | fill in | Per-request serialization churn vs one cached buffer |
+| `http_req_failed` | fill in | fill in | Should be 0 on both; if not, say which and why |
+
+State the bandwidth row first if it is the larger multiple. A CPU argument invites "buy a bigger server"; a bandwidth argument does not, and on a plant LAN it is the one that actually bites.
+
+**Step 7: Commit**
+
+```bash
+git add loadtest/store_tn_mqtt.js loadtest/server-mqtt.js loadtest/run-compare.sh loadtest/writer.js docker-compose.loadtest.yml
+git commit -m "test: measure uncached MQTT route against the cached Redis route"
+```
+
+---
+
 ## What This Harness Cannot Tell You
 
 State these alongside any result, or the numbers will be over-trusted.
 
 - **Localhost has no RTT and no bandwidth ceiling.** Container-to-container networking is far faster than a factory LAN. Convert `body_kb` × viewers ÷ 5s into Mbps and check it against the real link separately.
-- **Seeded Redis is static.** Nothing rewrites the `rt_*` hashes during the run, so this measures read and serialize cost, not contention with a live writer. Real Redis is being written to constantly at per-machine intervals of 2-18s.
+- **The writer is a model, not a replay.** Task 4b keeps the `rt_*` hashes moving at the measured 1-18s per-machine cadence, so freshness, contention and steady-state entropy are covered. What it still is not: the real upstream. Interval is drawn once per machine and jittered, whereas a real machine's cycle time drifts with the part it is running; `rt_status`/`rt_alarm` transitions are a flat probability rather than correlated with anything. Treat write-side numbers as order-of-magnitude.
+- **The writer cannot move the cache hit rate.** `cacheMs: 5_000` is time-based, so Layer 1 still runs exactly once per tick no matter how fast Redis is written. This harness cannot tell you what an invalidation-driven cache would cost.
 - **Container CPU limits are not production limits.** Docker Desktop on Windows runs a VM with its own CPU allocation. Compare against the production host's core count before extrapolating.
 - **MSSQL is only exercised at cache-miss.** `masterStorage` caches indefinitely with a 30-minute safety TTL, so a 75-second run queries it once. This does not test master-query cost under load — nor should it, because production does not either.
+- **Task 9's comparison excludes the running-time SQL.** Both routes get `getRunningTime: async () => []`, so the real `_store_tn.js` query is absent from the MQTT side. Defensible because that query sits behind a 20-second TTL with single-flight coalescing — it runs once per 20s regardless of viewer count, which makes it a constant offset rather than something that scales. But it *is* an offset, and it lands on the MQTT route only. If the comparison is ever used to argue absolute latency rather than the ratio between the two routes, measure that query separately and add it back.
+- **Task 9 fakes master loading on the MQTT side.** `store_tn_mqtt.js` reads the seeded `master_mc_storage_tb` instead of the four `DATA_*_TN` tables the production store joins across. This is behind `processStore`'s 5-minute reload and never in the per-request path, so it cannot move the per-request numbers — but it does mean this harness says nothing about the cost or correctness of that master query.
 - **One process, one core-ish.** Node is single-threaded apart from the libuv threadpool. If production runs multiple instances behind a load balancer, per-instance results multiply, but the shared cache does *not* — each instance keeps its own.
 
 ---
 
-## Open Questions for the Requester
+## Decisions (answered 2026-08-04)
 
-1. **What viewer count actually needs to pass?** The sweep goes to 500. The original concern was 1000 viewers × 1000 machines, but the frontend only has to serve the dashboards that exist. If the real ceiling is 50, most of this sweep is academic and the result is already known to be comfortable.
-2. **Should the k6 container get a CPU limit?** Unlimited, it may outcompete the backend on a laptop and produce latency that is really contention. Capping it (`cpus: 2`) is more honest but reduces achievable load.
-3. **Is a soak run wanted later?** 75 seconds cannot reveal slow memory growth in the LRU payload cache. A 2-hour steady run at moderate load would, and is cheap to add once this harness exists.
+1. **The target is 50 viewers × 1000 machines.** Not 1000 × 1000. The sweep in Task 6 was cut to `VIEWERS ∈ {50, 200}` accordingly, and `v50-k0` is the single pass/fail run. Consequence worth stating plainly: the prior 50-viewer synthetic sweep already showed ~40× headroom at this shape, so **this harness is expected to pass comfortably.** Its value is no longer "find the ceiling" — it is closing the Layer 1 gap (real Redis read + `prepareRealtimeData` at 1000 machines, which the synthetic harness never ran) and producing a number that came from the real route instead of a reimplementation of it. If a run comes back surprisingly slow, suspect the harness before the route.
+2. **k6 is capped at `cpus: 2`.** Applied in Task 2. At a 50-viewer target this costs nothing — 2 cores generate that load with room to spare — and it removes the most common false positive in this kind of test.
+3. **The 2-hour soak is wanted.** Added as Task 8, to run after Task 6 passes. Note the design constraint there: at a fixed 50 viewers the soak must rotate `?machines=` subsets, or the LRU payload cache fills once and never evicts, and the run proves nothing about the thing it exists to test.
