@@ -50,6 +50,8 @@ const getMachines = async () => {
 
 const prepare = (machines, runningTime, now) =>
   prepareRealtimeData(machines, runningTime, now, START_HOUR, START_MINUTE);
+
+//* we need rate limiting
 router.get(
   "/machines",
   makeMachinesHandler({
@@ -72,8 +74,22 @@ router.get(
     // `?machines=a,b,c` — a dashboard receives only the machines it renders.
     // The Redis read and derive still happen once per tick regardless of how
     // many distinct filters are in play; only slice+serialize+gzip is per
-    // filter. Measured at 50 viewers x 750 of 1000 machines: ~110ms per tick.
+    // filter.
+    //
+    // NOT yet measured against this route at scale: the only load numbers we
+    // have come from a synthetic harness, and they predate the fix that moved
+    // the filter lookup map out of the per-request path. Treat the design as
+    // sound and the numbers as absent.
     filterable: true,
+    // Below the ~900 where nginx's default 8k request-line buffer would reject
+    // the URL outright. A dashboard needing more than 500 machines wants a
+    // different transport, not a bigger number here.
+    maxFilter: 500,
+    // Redis and the master SQL load both sit inside the build. Without this a
+    // hang (not a rejection) parks `inflight` forever and takes every viewer
+    // down until restart. Well above the 5s tick so a slow tick is never
+    // mistaken for a dead one.
+    timeoutMs: 10_000,
   }),
 );
 

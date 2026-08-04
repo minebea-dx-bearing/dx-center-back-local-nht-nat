@@ -9,10 +9,27 @@
  * restart.
  */
 
+const { withTimeout } = require("./withTimeout");
+
 const SAFETY_TTL_MS = 30 * 60 * 1000;
 
-/** table defaults to `[${MASTER_DB}].[dbo].[master_mc_storage_tb]` — see .env. */
-const createMasterCache = ({ dbms, table, process: process_ }) => {
+/**
+ * Generous: this is a cold master load, not a per-tick read, and it runs once
+ * every 30 minutes at worst. The number exists to catch a wedged connection,
+ * not to police query performance.
+ */
+const LOAD_TIMEOUT_MS = 15_000;
+
+/**
+ * table defaults to `[${MASTER_DB}].[dbo].[master_mc_storage_tb]` — see .env.
+ *
+ * @param {number} [timeoutMs] Fail a hung load. Needed here in its OWN right
+ *   even though the calling route also wraps its build: the two caches park
+ *   separate `inflight` promises, so a route-level timeout clears the route's
+ *   and leaves this one still pointing at the dead query. Every later get()
+ *   would join it and the wedge would simply move down a layer.
+ */
+const createMasterCache = ({ dbms, table, process: process_, timeoutMs = LOAD_TIMEOUT_MS }) => {
   let state = { at: 0, rows: null, inflight: null };
 
   const load = async () => {
@@ -45,12 +62,11 @@ const createMasterCache = ({ dbms, table, process: process_ }) => {
     if (fresh) return Promise.resolve(state.rows);
     if (state.inflight) return state.inflight;
 
-    const inflight = (async () => {
-      const rows = await load();
+    const inflight = withTimeout(load(), timeoutMs, `master:${process_} load`).then((rows) => {
       state = { at: Date.now(), rows, inflight: null };
       console.info(`[master:${process_}] loaded ${rows.length} machines`);
       return rows;
-    })();
+    });
 
     state = { ...state, inflight };
     inflight.catch(() => {

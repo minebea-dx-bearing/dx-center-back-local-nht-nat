@@ -72,12 +72,18 @@ const readLiveFields = async (redis, devices, { div, process: process_ }) => {
       Object.assign(live, src.map(entry.payload));
       // updated_at must be the freshest signal across ALL hashes: rt_mqtt
       // heartbeats independently of rt_data (observed ~1h apart on one device).
-      if (entry.timestamp && (!newest || moment(entry.timestamp).isAfter(newest))) {
-        newest = moment(entry.timestamp);
-      }
+      //
+      // Compared as epoch ms, not moments. This runs 4x per device — 4000 moment
+      // constructions per tick at 1000 machines, for four integer comparisons.
+      // Date.parse agrees with moment to the millisecond on these timestamps,
+      // including their nanosecond fraction, which it truncates the same way.
+      const ms = entry.timestamp ? Date.parse(entry.timestamp) : NaN;
+      if (!Number.isNaN(ms) && (newest === null || ms > newest)) newest = ms;
     });
 
-    if (newest) live.updated_at = newest.format("YYYY-MM-DD HH:mm:ss");
+    // The one moment that earns its keep: .format() renders LOCAL time, and
+    // updated_at has always been local. Do not swap this for toISOString().
+    if (newest !== null) live.updated_at = moment(newest).format("YYYY-MM-DD HH:mm:ss");
     live.source = "REDIS";
     out[device] = live;
   });

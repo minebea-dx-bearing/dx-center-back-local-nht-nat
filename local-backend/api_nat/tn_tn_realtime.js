@@ -17,6 +17,18 @@ const store = require("./_store_tn");
 const prepareRealtimeData = (machines, runningTimeData, now, startHour = 5 ,startMinute = 30) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startHour, startMinute);
 
+  // Indexed once instead of a .find() per machine: that scan was O(machines x
+  // runningTime), which is a million comparisons per tick at the 1000-machine
+  // target. Costs nothing today because the Redis route passes [], but this
+  // file is the canonical example others get copied from.
+  //
+  // First write wins, matching the .find() it replaces — duplicate mc_no rows
+  // resolved to the earliest before and must keep doing so.
+  const runningTimeByMc = new Map();
+  for (const rt of runningTimeData) {
+    if (!runningTimeByMc.has(rt.mc_no)) runningTimeByMc.set(rt.mc_no, rt);
+  }
+
   return Object.values(machines).map((item) => {
     const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
@@ -46,7 +58,7 @@ const prepareRealtimeData = (machines, runningTimeData, now, startHour = 5 ,star
     const curr_utl = denom_utl > 0 ? Number(((total_pd / denom_utl) * 100).toFixed(2)) : 0;
 
     // ----- OEE -----
-    const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
+    const runInfo = runningTimeByMc.get(item.mc_no) || {};
     const act_opn_time = runInfo.sum_duration || 0;
     const total_work_time = runInfo.total_time || 0;
     const plan_stop = runInfo.sum_planstop_duration || 0;

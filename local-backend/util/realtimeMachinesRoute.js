@@ -24,6 +24,8 @@ const zlib = require("zlib");
 const crypto = require("crypto");
 const { promisify } = require("util");
 
+const { withTimeout } = require("./withTimeout");
+
 const gzip = promisify(zlib.gzip);
 
 /** Cap on distinct filter payloads held at once. Bounds memory; see normalize(). */
@@ -31,27 +33,6 @@ const FILTER_CACHE_MAX = 256;
 
 /** Default ceiling on machines per `?machines=` filter. See normalize(). */
 const FILTER_MAX_NAMES = 500;
-
-/**
- * Reject after `ms` instead of waiting forever. `ms = 0` disables it entirely.
- *
- * The underlying work is NOT cancelled — node cannot — but the cache stops
- * joining it. Without this a Redis or SQL call that hangs rather than rejects
- * leaves `inflight` set forever, so every later request awaits the same dead
- * promise and the endpoint stays down until restart. The existing `.catch`
- * guards only cover rejection, which a hang never produces.
- */
-const withTimeout = (promise, ms, label) => {
-  if (!ms) return promise;
-
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
-};
 
 const SUMMARY_FIELDS = {
   standard: { target: "target_pd", total: "total_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
