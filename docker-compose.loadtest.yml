@@ -1,0 +1,81 @@
+# Self-contained load-test stack. Nothing here reaches production.
+#
+#   docker compose -f docker-compose.loadtest.yml up -d --build
+#
+# Deliberately does NOT use `extends` from docker-compose.yml: that file
+# inherits the production .env, and the entire safety argument of this stack is
+# that the two environments never mix.
+
+services:
+  redis:
+    image: redis:7-alpine
+    # No persistence: every run starts from a known-empty state.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "LoadTest!Passw0rd"
+      MSSQL_PID: Developer
+    # MSSQL needs 2GB minimum or it exits during startup with a cryptic error.
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    # Anonymous listener, so the backend's five MQTT connections succeed
+    # instead of retrying forever against nothing.
+    command: ["sh", "-c", "printf 'listener 1883\\nallow_anonymous true\\n' > /m.conf && mosquitto -c /m.conf"]
+
+  backend:
+    build:
+      context: ./local-backend
+    image: backend-dx_center
+    container_name: backend-loadtest
+    env_file:
+      - ./local-backend/.env.loadtest
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./local-backend:/app
+      - /app/node_modules
+    environment:
+      TZ: Asia/Bangkok
+      # Async gzip runs on the libuv threadpool; 4 is the default ceiling and
+      # is the first thing to raise if cpuPct plateaus near 400%.
+      UV_THREADPOOL_SIZE: 4
+    depends_on:
+      redis:
+        condition: service_healthy
+      mssql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  k6:
+    image: grafana/k6:latest
+    # Started manually per run, never with `up`.
+    profiles: ["tools"]
+    # Capped so the load generator cannot outcompete the backend for host CPU.
+    # Uncapped, a laptop reports latency that is really contention between k6 and
+    # the thing it is measuring — and it reports it as a backend problem. The
+    # cost is a lower achievable load ceiling, which is acceptable here because
+    # the pass target is 50 viewers (see Decisions), far below what 2 cores of k6
+    # can generate.
+    cpus: 2
+    volumes:
+      - ./loadtest:/scripts
+    environment:
+      BASE_URL: http://backend:8009
+    entrypoint: ["k6"]
