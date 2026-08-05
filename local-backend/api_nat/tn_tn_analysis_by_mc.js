@@ -198,29 +198,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
     if (data[0].length > 0) {
       const arrayData = data[0];
-      let calDataOk = [];
-      let calDataNg = [];
-
-      for (let i = 0; i < arrayData.length; i++) {
-        // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
-        if (i === 0) {
-          calDataOk.push(arrayData[i].daily_ok);
-          calDataNg.push(arrayData[i].daily_ng);
-          continue; // ข้ามไปรอบถัดไปเลย
-        }
-
-        // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
-        let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
-        let calNg = arrayData[i].daily_ng - arrayData[i - 1].daily_ng;
-
-        // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
-        if (calOk < 0) calOk = arrayData[i].daily_ok;
-        if (calNg < 0) calNg = arrayData[i].daily_ng;
-
-        calDataOk.push(calOk);
-        calDataNg.push(calNg);
-      }
-
+      
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
       const defaultHours = [
         "06:00",
@@ -248,19 +226,56 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         "04:00",
         "05:00",
       ];
-      const dataMap = {};
-      data[0].forEach((item) => {
-        const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
-        dataMap[hour] = item.cat_time;
-      });
+      // 1. แปลง arrayData เป็น Map โดยใช้ชั่วโมง (HH) เป็น Key เพื่อให้ค้นหาง่าย
+        const dataByHourMap = {};
+        arrayData.forEach((item) => {
+          if (item && item.cat_time) {
+            const hour = item.cat_time.split(":")[0]; // เช่น "07"
+            dataByHourMap[hour] = item;
+          }
+        });
 
-      // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
-      const finalDate = defaultHours.map((hourStr) => {
-        const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
+        let calDataOk = [];
+        let calDataNg = [];
+        let finalDate = [];
 
-        // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
-        // ถ้าไม่มีให้ใช้ค่า default (07:00)
-        return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
+        let previousItem = null; // ตัวแปรเก็บค่าของชั่วโมงก่อนหน้าที่มีข้อมูลไว้ทำผลต่าง
+
+        // 2. วนลูปตาม defaultHours (ครบทั้ง 24 ชั่วโมงแน่ๆ)
+        defaultHours.forEach((hourStr) => {
+          const hourKey = hourStr.split(":")[0]; // ดึง "07"
+          const currentItem = dataByHourMap[hourKey]; // ดึงข้อมูลของชั่วโมงนี้จาก Map
+
+          // 2.1 เก็บค่าเวลาจริง (ถ้าไม่มีให้ใช้ HH:00 ตาม default)
+          finalDate.push(currentItem ? currentItem.cat_time : hourStr);
+
+          // 2.2 กรณีที่ชั่วโมงนี้ "ไม่มีข้อมูลใน DB"
+          if (!currentItem) {
+            calDataOk.push(0);
+            calDataNg.push(0);
+            return; // ข้ามไปชั่วโมงถัดไป
+          }
+
+          // 2.3 กรณีที่มีข้อมูลชั่วโมงนี้
+          // ถ้ายังไม่มี previousItem (แปลว่าเพิ่งเจอข้อมูลชั่วโมงแรกสุดที่มีอยู่จริง)
+          if (!previousItem) {
+            calDataOk.push(currentItem.daily_ok);
+            calDataNg.push(currentItem.daily_ng);
+          } else {
+            // กรณีมีข้อมูลชั่วโมงก่อนหน้า ให้หาผลต่าง
+            let calOk = currentItem.daily_ok - previousItem.daily_ok;
+            let calNg = currentItem.daily_ng - previousItem.daily_ng;
+
+            // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ)
+            if (calOk < 0) calOk = currentItem.daily_ok;
+            if (calNg < 0) calNg = currentItem.daily_ng;
+
+            calDataOk.push(calOk);
+            calDataNg.push(calNg);
+          }
+
+          // อัปเดต previousItem ให้เป็นข้อมูลของชั่วโมงปัจจุบัน เพื่อเอาไว้ลบในชั่วโมงถัดไป
+          previousItem = currentItem;
       });
 
       res.json({

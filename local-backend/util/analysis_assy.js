@@ -161,38 +161,7 @@ const productionByHour = async (dbms, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUM
   
       if (data[0].length > 0) {
         const arrayData = data[0];
-        let yieldData = [];
-        let calDataOk = [];
-        let calDataNg = [];
 
-        for (let i = 0; i < arrayData.length; i++) {
-          // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
-          if (i === 0) {
-            calDataOk.push(arrayData[i].daily_ok);
-            calDataNg.push(arrayData[i].daily_ng);
-            const initialYield = arrayData[i].daily_total === 0 ? 0 : (arrayData[i].daily_ok / arrayData[i].daily_total) * 100;
-            yieldData.push(Number(initialYield.toFixed(2)));
-            continue; // ข้ามไปรอบถัดไปเลย
-          }
-
-          // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
-          let calTotal = arrayData[i].daily_total - arrayData[i - 1].daily_total;
-          let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
-          let calNg = arrayData[i].daily_ng - arrayData[i - 1].daily_ng;
-
-          // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
-          if (calTotal < 0) calTotal = arrayData[i].daily_total;
-          if (calOk < 0) calOk = arrayData[i].daily_ok;
-          if (calNg < 0) calNg = arrayData[i].daily_ng;
-
-          calDataOk.push(calOk);
-          calDataNg.push(calNg);
-          
-          // ดักจับหารด้วย 0 กันระบบระเบิด (NaN)
-          const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
-          yieldData.push(Number(currentYield.toFixed(2)));
-        }
-        
         // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
         const defaultHours = [
           "07:00",
@@ -220,20 +189,66 @@ const productionByHour = async (dbms, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUM
           "05:00",
           "06:00",
         ];
-
-        const dataMap = {};
-        data[0].forEach((item) => {
-          const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
-          dataMap[hour] = item.cat_time;
+        
+        // 1. แปลง arrayData เป็น Map โดยใช้ชั่วโมง (HH) เป็น Key เพื่อให้ค้นหาง่าย
+        const dataByHourMap = {};
+        arrayData.forEach((item) => {
+          if (item && item.cat_time) {
+            const hour = item.cat_time.split(":")[0]; // เช่น "07"
+            dataByHourMap[hour] = item;
+          }
         });
 
-        // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
-        const finalDate = defaultHours.map((hourStr) => {
-          const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
+        let yieldData = [];
+        let calDataOk = [];
+        let calDataNg = [];
+        let finalDate = [];
 
-          // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
-          // ถ้าไม่มีให้ใช้ค่า default (07:00)
-          return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
+        let previousItem = null; // ตัวแปรเก็บค่าของชั่วโมงก่อนหน้าที่มีข้อมูลไว้ทำผลต่าง
+
+        // 2. วนลูปตาม defaultHours (ครบทั้ง 24 ชั่วโมงแน่ๆ)
+        defaultHours.forEach((hourStr) => {
+          const hourKey = hourStr.split(":")[0]; // ดึง "07"
+          const currentItem = dataByHourMap[hourKey]; // ดึงข้อมูลของชั่วโมงนี้จาก Map
+
+          // 2.1 เก็บค่าเวลาจริง (ถ้าไม่มีให้ใช้ HH:00 ตาม default)
+          finalDate.push(currentItem ? currentItem.cat_time : hourStr);
+
+          // 2.2 กรณีที่ชั่วโมงนี้ "ไม่มีข้อมูลใน DB"
+          if (!currentItem) {
+            calDataOk.push(0);
+            calDataNg.push(0);
+            yieldData.push(0);
+            return; // ข้ามไปชั่วโมงถัดไป
+          }
+
+          // 2.3 กรณีที่มีข้อมูลชั่วโมงนี้
+          // ถ้ายังไม่มี previousItem (แปลว่าเพิ่งเจอข้อมูลชั่วโมงแรกสุดที่มีอยู่จริง)
+          if (!previousItem) {
+            calDataOk.push(currentItem.daily_ok);
+            calDataNg.push(currentItem.daily_ng);
+            const initialYield =currentItem.daily_total === 0 ? 0 : (currentItem.daily_ok / currentItem.daily_total) * 100;
+            yieldData.push(Number(initialYield.toFixed(2)));
+          } else {
+            // กรณีมีข้อมูลชั่วโมงก่อนหน้า ให้หาผลต่าง
+            let calTotal = currentItem.daily_total - previousItem.daily_total;
+            let calOk = currentItem.daily_ok - previousItem.daily_ok;
+            let calNg = currentItem.daily_ng - previousItem.daily_ng;
+
+            // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ)
+            if (calTotal < 0) calTotal = currentItem.daily_total;
+            if (calOk < 0) calOk = currentItem.daily_ok;
+            if (calNg < 0) calNg = currentItem.daily_ng;
+
+            calDataOk.push(calOk);
+            calDataNg.push(calNg);
+
+            const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
+            yieldData.push(Number(currentYield.toFixed(2)));
+          }
+
+          // อัปเดต previousItem ให้เป็นข้อมูลของชั่วโมงปัจจุบัน เพื่อเอาไว้ลบในชั่วโมงถัดไป
+          previousItem = currentItem;
         });
 
         return{
