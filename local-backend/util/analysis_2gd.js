@@ -138,7 +138,7 @@ const calculateShifts = (data, date) => {
   };
 }
 
-const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_CT, mc_no, date) => {
+const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUMN_TOTAL, COLUMN_CT, mc_no, date) => {
     try {
       let data = await dbms.query(`
           SELECT [registered],
@@ -146,6 +146,7 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
               format(iif(DATEPART(HOUR, [registered]) < 8, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
+              ${COLUMN_NG} AS daily_ng,
               ${COLUMN_TOTAL} AS daily_total,
               ${COLUMN_CT} AS [cycle_t],
               CASE 
@@ -162,12 +163,14 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
       if (data[0].length > 0) {
         const arrayData = data[0];
         let yieldData = [];
-        let calDataTotal = [];
+        let calDataOk = [];
+        let calDataNg = [];
 
         for (let i = 0; i < arrayData.length; i++) {
           // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
           if (i === 0) {
-            calDataTotal.push(arrayData[i].daily_total);
+            calDataOk.push(arrayData[i].daily_ok);
+            calDataNg.push(arrayData[i].daily_ng);
             const initialYield = arrayData[i].daily_total === 0 ? 0 : (arrayData[i].daily_ok / arrayData[i].daily_total) * 100;
             yieldData.push(Number(initialYield.toFixed(2)));
             continue; // ข้ามไปรอบถัดไปเลย
@@ -176,12 +179,15 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
           // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
           let calTotal = arrayData[i].daily_total - arrayData[i - 1].daily_total;
           let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
+          let calNg = arrayData[i].daily_ng - arrayData[i - 1].daily_ng;
 
           // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
           if (calTotal < 0) calTotal = arrayData[i].daily_total;
           if (calOk < 0) calOk = arrayData[i].daily_ok;
+          if (calNg < 0) calNg = arrayData[i].daily_ng;
 
-          calDataTotal.push(calTotal);
+          calDataOk.push(calOk);
+          calDataNg.push(calNg);
           
           // ดักจับหารด้วย 0 กันระบบระเบิด (NaN)
           const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
@@ -190,6 +196,7 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
         
         // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
         const defaultHours = [
+          "07:00",
           "08:00",
           "09:00",
           "10:00",
@@ -213,25 +220,26 @@ const productionByHour = async (DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_C
           "04:00",
           "05:00",
           "06:00",
-          "07:00",
         ];
+
         const dataMap = {};
         data[0].forEach((item) => {
           const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
           dataMap[hour] = item.cat_time;
         });
-  
+
         // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
         const finalDate = defaultHours.map((hourStr) => {
           const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
-  
+
           // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
           // ถ้าไม่มีให้ใช้ค่า default (07:00)
           return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
         });
-  
+
         return{
-          data: calDataTotal,
+          data_ok: calDataOk,
+          data_ng: calDataNg,
           yield: yieldData,
           data_raw: data[0],
           data_date: finalDate,

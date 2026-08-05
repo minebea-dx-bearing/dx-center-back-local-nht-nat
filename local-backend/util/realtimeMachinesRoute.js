@@ -22,16 +22,16 @@
 const moment = require("moment");
 
 const SUMMARY_FIELDS = {
-  standard: { target: "target_pd", total: "total_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
-  fSpindle: { target: "f_target_pd", total: "s_total_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "f_oee" },
-  sSpindle: { target: "s_target_pd", total: "s_total_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "s_oee" },
+  standard: { target: "target_pd", prod: "act_pd", ct: "act_ct", utl: "curr_utl", oee: "oee" },
+  fSpindle: { target: "f_target_pd", prod: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "f_oee" },
+  sSpindle: { target: "s_target_pd", prod: "s_act_pd", ct: "s_act_ct", utl: "s_curr_utl", oee: "s_oee" },
 };
 
 const summarize = (dataArray, fields) => {
   const acc = dataArray.reduce(
     (a, item) => {
       a.total_target += item[fields.target] || 0;
-      a.total_pd += item[fields.total] || 0;
+      a.total_pd += item[fields.prod] || 0;
       a.total_cycle_t += item[fields.ct] || 0;
       a.total_utl += item[fields.utl] || 0;
       a.total_oee *= (item[fields.oee] / 100) || 1;

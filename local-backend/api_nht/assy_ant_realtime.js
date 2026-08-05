@@ -63,8 +63,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const f_total_pd = f_act_pd + f_ng_pd;
     const s_total_pd = s_act_pd + s_ng_pd;
 
-    const s_diff_pd = f_total_pd - f_target_pd;
-    const f_diff_pd = s_total_pd - f_target_pd;
+    const s_diff_pd = f_act_pd - f_target_pd;
+    const f_diff_pd = s_act_pd - f_target_pd;
 
     const s_diff_ct = Number((s_act_ct - s_target_ct).toFixed(2));
     const f_diff_ct = Number((f_act_ct - s_target_ct).toFixed(2));

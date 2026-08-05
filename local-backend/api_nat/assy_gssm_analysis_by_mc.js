@@ -38,7 +38,7 @@ router.get("/master_machine", async (req, res) => {
 router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
   try {
     let { mc_no, date } = req.params;
-    const result = await getData.productionByHour(dbms, DATABASE_PROD, COLUMN_OK, COLUMN_TOTAL, COLUMN_CT, mc_no, date)
+    const result = await getData.productionByHour(dbms, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUMN_TOTAL, COLUMN_CT, mc_no, date)
     res.json(result);
   } catch (error) {
     res.status(500).json({ data: [], success: false, message: "Internal Server Error" });

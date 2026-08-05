@@ -47,7 +47,7 @@ const prepareRealtimeData = (machines, runningTimeData, now) => {
 
     const diff_ct = Number((act_ct - target_ct).toFixed(2));
     
-    const diff_pd = total_pd - target_pd;
+    const diff_pd = act_pd - target_pd;
     const curr_yield = Number((item.yield_ok / 10).toFixed(2));
 
     const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;

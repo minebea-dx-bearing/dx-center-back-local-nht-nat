@@ -188,6 +188,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 
     const query = (mc % 2 === 0) ? `
         ${COLUMN_OK_FRONT} AS daily_ok,
+        ${COLUMN_NG_FRONT} AS daily_ng,
         ${COLUMN_TOTAL_FRONT} AS daily_total,
         ${COLUMN_CT_FRONT} AS [cycle_t],
         CASE 
@@ -196,6 +197,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         END AS yield,
     ` : `
         ${COLUMN_OK_REAR} AS daily_ok,
+        ${COLUMN_NG_REAR} AS daily_ng,
         ${COLUMN_TOTAL_REAR} AS daily_total,
         ${COLUMN_CT_REAR} AS [cycle_t],
         CASE 
@@ -220,12 +222,14 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
     if (data[0].length > 0) {
       const arrayData = data[0];
       let yieldData = [];
-      let calDataTotal = [];
+      let calDataOk = [];
+      let calDataNg = [];
 
       for (let i = 0; i < arrayData.length; i++) {
         // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
         if (i === 0) {
-          calDataTotal.push(arrayData[i].daily_total);
+          calDataOk.push(arrayData[i].daily_ok);
+          calDataNg.push(arrayData[i].daily_ng);
           const initialYield = arrayData[i].daily_total === 0 ? 0 : (arrayData[i].daily_ok / arrayData[i].daily_total) * 100;
           yieldData.push(Number(initialYield.toFixed(2)));
           continue; // ข้ามไปรอบถัดไปเลย
@@ -234,12 +238,15 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
         let calTotal = arrayData[i].daily_total - arrayData[i - 1].daily_total;
         let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
+        let calNg = arrayData[i].daily_ng - arrayData[i - 1].daily_ng;
 
         // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
         if (calTotal < 0) calTotal = arrayData[i].daily_total;
         if (calOk < 0) calOk = arrayData[i].daily_ok;
+        if (calNg < 0) calNg = arrayData[i].daily_ng;
 
-        calDataTotal.push(calTotal);
+        calDataOk.push(calOk);
+        calDataNg.push(calNg);
         
         // ดักจับหารด้วย 0 กันระบบระเบิด (NaN)
         const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
@@ -273,6 +280,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
         "05:00",
         "06:00",
       ];
+
       const dataMap = {};
       data[0].forEach((item) => {
         const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
@@ -289,7 +297,8 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       });
 
       res.json({
-        data: calDataTotal,
+        data_ok: calDataOk,
+        data_ng: calDataNg,
         yield: yieldData,
         data_raw: data[0],
         data_date: finalDate,
@@ -941,6 +950,163 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
 
   const result = calculateShifts(data[0], date);
   res.json({ success: true, data: result });
+});
+
+router.get("/production_hour_all_mc/:date/:shift", async (req, res) => {
+  try {
+    let { date, shift } = req.params;
+    console.log(date, shift)
+
+    let data = await dbms.query(`
+      WITH [data] AS (
+        SELECT [registered],
+            convert(varchar, [registered], 8) AS TIME,
+            format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date],
+            LEFT([mc_no], 3) + RIGHT('0' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2) AS [mc_no],
+            ${COLUMN_OK_FRONT} AS daily_ok,
+            ${COLUMN_TOTAL_FRONT} AS daily_total,
+            ${COLUMN_CT_FRONT} AS [cycle_t],
+            CASE 
+                  WHEN ${COLUMN_TOTAL_FRONT} = 0 THEN 0
+                  ELSE cast((${COLUMN_OK_FRONT} * 1.0 / ${COLUMN_TOTAL_FRONT}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
+            END AS yield,
+            FORMAT(registered, 'HH:mm') AS cat_time
+        FROM ${DATABASE_PROD}
+        WHERE FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+        UNION
+        SELECT [registered],
+            convert(varchar, [registered], 8) AS TIME,
+            format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date],
+            LEFT([mc_no], 3) + RIGHT('0' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2) AS [mc_no],
+            ${COLUMN_OK_REAR} AS daily_ok,
+            ${COLUMN_TOTAL_REAR} AS daily_total,
+            ${COLUMN_CT_REAR} AS [cycle_t],
+            CASE 
+                  WHEN ${COLUMN_TOTAL_REAR} = 0 THEN 0
+                  ELSE cast((${COLUMN_OK_REAR} * 1.0 / ${COLUMN_TOTAL_REAR}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
+            END AS yield,
+            FORMAT(registered, 'HH:mm') AS cat_time
+        FROM ${DATABASE_PROD}
+        WHERE FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+      )
+      SELECT
+        *,
+        IIF(cat_time >= '07:00' and cat_time < '19:00', 'M', 'N') AS shift
+      FROM [data]
+      ORDER BY registered ASC
+    `);
+
+    if (data[0].length > 0) {
+      const arrayData = (shift === 'M') ? data[0].filter(item => item.shift === 'M') : data[0].filter(item => item.shift === 'N');
+      // console.log(arrayData)
+      
+
+      const groupedData = arrayData.reduce((acc, item) => {
+        const key = `${item.mc_no}`;
+
+        // 2. ถ้ายังไม่เคยมี Key นี้ใน Object ผลลัพธ์ (acc) ให้สร้างโครงสร้างเริ่มต้นไว้ก่อน
+        if (!acc[key]) {
+          acc[key] = []
+        }
+
+        acc[key].push(item);
+
+        return acc;
+      }, {});
+
+      Object.keys(groupedData).forEach((key) => {
+        let yieldData = [];
+        let calDataTotal = [];
+        for(let i = 0; i < groupedData[key].length; i++) {
+          // console.log(key[i])
+          // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
+          if (i === 0) {
+            calDataTotal.push(groupedData[key][i].daily_total);
+            const initialYield = groupedData[key][i].daily_total === 0 ? 0 : (groupedData[key][i].daily_ok / groupedData[key][i].daily_total) * 100;
+            yieldData.push(Number(initialYield.toFixed(2)));
+            continue; // ข้ามไปรอบถัดไปเลย
+          }
+
+          // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
+          let calTotal = groupedData[key][i].daily_total - groupedData[key][i - 1].daily_total;
+          let calOk = groupedData[key][i].daily_ok - groupedData[key][i - 1].daily_ok;
+
+          // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
+          if (calTotal < 0) calTotal = groupedData[key][i].daily_total;
+          if (calOk < 0) calOk = groupedData[key][i].daily_ok;
+
+          calDataTotal.push(calTotal);
+          
+          // ดักจับหารด้วย 0 กันระบบระเบิด (NaN)
+          const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
+          yieldData.push(Number(currentYield.toFixed(2)));
+        }
+        // console.log(key, calDataTotal, yieldData)
+        // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
+        const defaultHours = (shift === "M") ? [
+          "07:00",
+          "08:00",
+          "09:00",
+          "10:00",
+          "11:00",
+          "12:00",
+          "13:00",
+          "14:00",
+          "15:00",
+          "16:00",
+          "17:00",
+          "18:00" 
+        ] : [
+          "19:00",
+          "20:00",
+          "21:00",
+          "22:00",
+          "23:00",
+          "00:00",
+          "01:00",
+          "02:00",
+          "03:00",
+          "04:00",
+          "05:00",
+          "06:00",
+        ]
+        
+        const dataMap = {};
+        data[0].forEach((item) => {
+          const hour = item.cat_time.split(":")[0]; // ดึง "07" จาก "07:07"
+          dataMap[hour] = item.cat_time;
+        });
+
+        // 2. วนลูป defaultHours เพื่อสร้างผลลัพธ์ใหม่
+        const finalDate = defaultHours.map((hourStr) => {
+          const hourKey = hourStr.split(":")[0]; // ดึง "07" จาก "07:00"
+
+          // ถ้าใน dataMap มี key นี้ (เช่น "07") ให้ใช้ค่าจริง (07:07)
+          // ถ้าไม่มีให้ใช้ค่า default (07:00)
+          return dataMap[hourKey] ? dataMap[hourKey] : hourStr;
+        });
+        groupedData[key] = {
+          data: calDataTotal,
+          yield: yieldData,
+          data_raw: data[0],
+          data_date: finalDate,
+          success: true,
+          message: "ok",
+        }
+      })
+      console.log(groupedData)
+      
+      res.json({
+        data: groupedData,
+        success: true,
+        message: "ok",
+      });
+    } else {
+      res.json({ data: [], data_raw: data[0], success: true, message: "ok" });
+    }
+  } catch (error) {
+    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
+  }
 });
 
 module.exports = router;
