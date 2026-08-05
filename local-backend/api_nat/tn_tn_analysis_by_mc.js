@@ -181,6 +181,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
               format(iif(DATEPART(HOUR, [registered]) < 6, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
               [mc_no],
               ${COLUMN_OK} AS daily_ok,
+              ${COLUMN_NG} AS daily_ng,
               ${COLUMN_TOTAL} AS daily_total,
               ${COLUMN_CT} AS [cycle_t],
               CASE 
@@ -196,14 +197,28 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
     );
 
     if (data[0].length > 0) {
-      arrayData = data[0];
-      arrayData_yield = data[0];
-      let calData = [];
-      const index_data = arrayData[0].daily_total;
-      await calData.push(index_data);
+      const arrayData = data[0];
+      let calDataOk = [];
+      let calDataNg = [];
 
-      for (let i = 0; i < arrayData.length - 1; i++) {
-        await calData.push(arrayData[i + 1].daily_total - arrayData[i].daily_total < 0 ? 0 : arrayData[i + 1].daily_total - arrayData[i].daily_total);
+      for (let i = 0; i < arrayData.length; i++) {
+        // 1. ตัวแรกสุดของ Array (Index 0) ให้ใช้ค่าเริ่มต้นตรงๆ
+        if (i === 0) {
+          calDataOk.push(arrayData[i].daily_ok);
+          calDataNg.push(arrayData[i].daily_ng);
+          continue; // ข้ามไปรอบถัดไปเลย
+        }
+
+        // 3. กรณีเป็นเครื่องจักรเดียวกัน ให้หาผลต่าง (ตัวปัจจุบัน ลบ ตัวก่อนหน้า)
+        let calOk = arrayData[i].daily_ok - arrayData[i - 1].daily_ok;
+        let calNg = arrayData[i].daily_ng - arrayData[i - 1].daily_ng;
+
+        // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ) ให้ดึงค่าตัวปัจจุบันมาใช้ตรงๆ
+        if (calOk < 0) calOk = arrayData[i].daily_ok;
+        if (calNg < 0) calNg = arrayData[i].daily_ng;
+
+        calDataOk.push(calOk);
+        calDataNg.push(calNg);
       }
 
       // 1. สร้าง Map หรือ Object เพื่อให้ค้นหาได้เร็ว (ดึงเฉพาะ HH มาเป็น Key)
@@ -249,7 +264,8 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
       });
 
       res.json({
-        data: calData,
+        data_ok: calDataOk,
+        data_ng: calDataNg,
         data_raw: data[0],
         data_date: finalDate,
         success: true,
