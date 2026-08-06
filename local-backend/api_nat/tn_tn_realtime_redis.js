@@ -118,3 +118,11 @@ router.post("/master/reload", (req, res) => {
 });
 
 module.exports = { router, masterCache };
+
+
+
+// * stress test that should try 50 viewer, 50 MC, 1s at data 70,000+++
+
+
+//? if problem of dashboard is BE code is it possible to 
+
