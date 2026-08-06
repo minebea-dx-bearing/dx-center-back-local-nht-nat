@@ -93,6 +93,10 @@ app.use("/nht/assy/combine-realtime", require("./api_nht/assy_combine_realtime")
 
 app.use("/nht/gd/2ndinbore-realtime", require("./api_nht/gd_2ndInBore_realtime").router);
 
+app.use("/nat/shift-production", require("./api_nat/shift_production"));
+
+require("./services/shiftSummary/shiftSummaryJob").registerShiftSummaryJobs();
+
 app.listen(process.env.PORT, () => {
     console.log(`Server is running on port ${process.env.PORT}`);
 });
