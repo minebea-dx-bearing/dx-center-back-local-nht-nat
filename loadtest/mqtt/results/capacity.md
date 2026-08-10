@@ -27,6 +27,33 @@ the gap. Given `achieved` tracked `target` cleanly through 1000 machines and
 RSS stayed flat, CPU headroom was very unlikely to be the constraint here,
 but that's inference, not a measurement.
 
+## Fixed: RATE_HZ was silently capped at ~100/s per machine
+
+Found 2026-08-10, after the COUNT ramp above (which all ran at `RATE_HZ=10`
+and never exercised this). `generator.js`'s scheduler polled once every
+`TICK_MS=10ms` and fired **at most one** publish per machine per poll
+(`if`, not a loop) — so no matter how far a machine's schedule fell behind,
+it could only ever catch up by one message per poll. That hard-caps the
+achievable per-machine rate at `1000 / TICK_MS` = **100/s**, regardless of
+`RATE_HZ`. Measured before the fix: `RATE_HZ=1000`, 1 machine, only achieved
+~95–98/s.
+
+Fixed by turning the single `if` into a bounded catch-up loop — a machine
+that's fallen behind fires repeatedly within one poll until caught up (capped
+at 3x the nominal expected fires per poll, so a genuinely overloaded run
+degrades visibly in `achieved` instead of the backlog growing unbounded).
+Re-verified after the fix:
+
+| Scenario | target/s | achieved/s |
+|---|---|---|
+| `RATE_HZ=10`, `COUNT=10` (regression check) | 100 | 97–100 |
+| `RATE_HZ=1000`, `COUNT=1` | 1,000 | 986–1,004 |
+| `RATE_HZ=1000`, `COUNT=10` | 10,000 | 9,255–10,017 (first 10s low, connect ramp-up) |
+
+`RATE_HZ` above ~100/s per machine was never exercised before this fix — the
+COUNT ramp table above only used `RATE_HZ=10` throughout, so it says nothing
+about this ceiling one way or the other.
+
 ## Ceiling found: COUNT=2000 hits a broker-side connection limit, not a generator one
 
 Tested 2026-08-10, after the 1000-machine ramp above. `COUNT=2000` (target

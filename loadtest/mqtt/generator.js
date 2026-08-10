@@ -133,6 +133,13 @@ if (cluster.isPrimary) {
   };
 
   const tickIntervalMs = 1000 / RATE_HZ;
+  // TICK_MS is the scheduler's own poll granularity — at RATE_HZ high enough
+  // that tickIntervalMs < TICK_MS, a single poll must fire more than once per
+  // machine to keep up (e.g. RATE_HZ=1000 needs 10 fires per 10ms poll).
+  // Capped at 3x the nominal expectation so a genuinely overloaded run
+  // degrades (a lower `achieved`, visibly) instead of a growing unbounded
+  // backlog spiraling the process further behind every tick.
+  const maxCatchupPerTick = Math.max(1, Math.ceil((TICK_MS / tickIntervalMs) * 3));
 
   const machines = shard.map((device, i) => ({
     device,
@@ -176,29 +183,38 @@ if (cluster.isPrimary) {
 
       for (let i = 0; i < machines.length; i++) {
         const m = machines[i];
-        if (now < m.nextAt) continue;
-        // Advance from the machine's own last-fire time, not `now` — advancing
-        // from `now` would let a delayed tick permanently skew that machine's
-        // cadence away from RATE_HZ instead of it catching back up.
-        m.nextAt += tickIntervalMs;
-
         const client = clientFor(m.device, i);
         if (!client) continue;
 
-        m.seq++;
-        const marker = `${RUN_ID}-${m.device}-${m.seq}`;
-        publish(client, topic("data", m.device), buildDataPayload(m.state, marker), QOS);
+        // Catch-up loop, not a single `if`: at RATE_HZ high enough that
+        // tickIntervalMs < TICK_MS, one poll must fire multiple times per
+        // machine to hit target — a single `if` here silently caps every
+        // machine at 1000/TICK_MS regardless of RATE_HZ (measured 2026-08-10:
+        // RATE_HZ=1000 only achieved ~95-98/s before this fix).
+        for (let fired = 0; now >= m.nextAt && fired < maxCatchupPerTick; fired++) {
+          // Advance from the machine's own last-fire time, not `now` —
+          // advancing from `now` would let a delayed tick permanently skew
+          // that machine's cadence away from RATE_HZ instead of catching up.
+          m.nextAt += tickIntervalMs;
 
-        // Status and alarm are rare edge events, not per-tick, to match
-        // observed cadence — see Task 7 Step 3 of the generator plan.
-        if (m.state.rnd() < 0.002) {
-          m.status = STATUS_VALUES[Math.floor(m.state.rnd() * STATUS_VALUES.length)];
-          publish(client, topic("status", m.device), { status: m.status }, QOS);
+          m.seq++;
+          const marker = `${RUN_ID}-${m.device}-${m.seq}`;
+          publish(client, topic("data", m.device), buildDataPayload(m.state, marker), QOS);
+
+          // Status and alarm are rare edge events, not per-tick, to match
+          // observed cadence — see Task 7 Step 3 of the generator plan.
+          if (m.state.rnd() < 0.002) {
+            m.status = STATUS_VALUES[Math.floor(m.state.rnd() * STATUS_VALUES.length)];
+            publish(client, topic("status", m.device), { status: m.status }, QOS);
+          }
+          if (m.state.rnd() < 0.001) {
+            const alarm = ALARM_VALUES[Math.floor(m.state.rnd() * ALARM_VALUES.length)];
+            publish(client, topic("alarm", m.device), { status: alarm }, QOS);
+          }
         }
-        if (m.state.rnd() < 0.001) {
-          const alarm = ALARM_VALUES[Math.floor(m.state.rnd() * ALARM_VALUES.length)];
-          publish(client, topic("alarm", m.device), { status: alarm }, QOS);
-        }
+        // Still behind after the cap — resync to `now` rather than let debt
+        // compound tick over tick; the shortfall shows up in `achieved`.
+        if (now >= m.nextAt) m.nextAt = now + tickIntervalMs;
       }
 
       busy = false;
