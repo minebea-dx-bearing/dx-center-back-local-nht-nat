@@ -1,0 +1,36 @@
+/**
+ * Status and alarm values the VM ingest consumer accepts, copied verbatim from
+ * the VM's status/alarm master table (see §5e of ../../docs/mqtt-ingest-load-test.md).
+ *
+ * Matching is exact-string. Do not "fix" apparent typos or truncations in
+ * ALARM_VALUES (e.g. "INVERTER MAIN MOTO") — the master table stores them this
+ * way, and a corrected value is silently discarded by the consumer, not
+ * rejected with an error.
+ */
+
+const STATUS_VALUES = ["run", "stop", "wait", "alarm", "other"];
+
+const ALARM_VALUES = [
+  "RPM NEG LIMIT OVER", "RPM POS LIMIT OVER", "DROP PARTS 5PCS 2ND CUT",
+  "FOOT WORK COUNTER OVER", "MAIN MOTOR STOP", "END BAR RECEIVER NOT HOME",
+  "WIDTH SMALL COUNTER", "DRILL CONTROL OVER LIMIT", "COVER OPEN",
+  "BATTERY SCREEN LOW", "SPINDLE RPM NG", "AIR PRESSURE DROP",
+  "SAFETY HANDLE", "LUBE SPINDLE", "OVER LOAD",
+  "AUTO FIRE", "WIDTH SMALL 3PCS", "DATA FEED OVER",
+  "SAFETY CHACKING", "GEAR OIL LOW", "DRILL OUT",
+  "EMG STOP", "DROP PARTS 5PCS 1ST CUT", "AUTO BAR FEEDER ERROR",
+  "FULL CHIP CONVEYOR", "PART DROP POS 4", "OVER LOAD MOTOR GE",
+  "INPUT VALUES R.P.M D", "GEAR R.P.M NO SETTIN", "THE MACHINE DOES NC",
+  "COMPRESSED AIR PRESS", "R.P.M SPINDLE LOW", "PART DROP NO SETTING",
+  "BAR CUT NO SETTING", "CNT 8 NO SETTING", "HIGH VALUE NOT MORE",
+  "REAR DOOR OPEN", "EMERGENCE PUSHTBUT", "OVER LOAD MOTOR HI",
+  "OVER LOAD MOTOR CO", "INVERTER CONVEYOR M", "INVERTER MAIN MOTO",
+  "OVER LOAD MOTOR HG", "OVER LOAD MOTOR AW", "FRONT DOOR OPEN",
+  "R.P.M SPINDLE HIGH", "CAM POSITION ALARM", "SERVO ALARM",
+  "HG 68 LOW LEVEL", "AW 10 LOW LEVEL", "DRILL OUT ALARM",
+  "PART DROP POS 6", "HI PRESSHER LOW", "BAR END",
+  "FIRE EXTINGUISHER", "OIL TEMP HIGH", "ANALOG UNIT ALARM",
+  "BOBBIN OF POSITION", "COOLANT LOW", "HANDLE ENGAGED",
+];
+
+module.exports = { STATUS_VALUES, ALARM_VALUES };

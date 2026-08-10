@@ -225,6 +225,16 @@ If the row is there but fields are wrong (zeros, nulls, truncated strings),
 **that is the most valuable possible finding** and the entire reason Phase A
 exists. Rates would have looked perfect.
 
+> **Corrected 2026-08-10, during Phase B:** `id_num` is **not** a ClickHouse
+> column on the real ingest table — `DESCRIBE TABLE` confirms it, along with
+> `spec`. Both are sent over MQTT (real devices send them, per §4) but the
+> ingest consumer silently drops them before the ClickHouse insert; that is
+> expected, not a bug. The query above cannot work as written. Marker-based
+> lookup is dead for this table; verify by `device` + a `created_at` time
+> window instead (`created_at` is also bucketed to 10s, not per-message — see
+> [../loadtest/mqtt/verify.md](../loadtest/mqtt/verify.md) for the corrected
+> approach and the real column list).
+
 ### 5d. Resolve any topic type that didn't arrive
 
 > **Measured 2026-08-10:** `data`, `status`, and `mqtt` arrived at all three
@@ -357,20 +367,27 @@ replace them with measured rates.
 
 Only after step 5 passes end to end.
 
-Loop 600 publishes over 60s with incrementing counters and unique markers
-(`PHASE-A-S-0001`…). A shell loop spawning a container per message is far too
-slow — this needs the Node generator, which is Phase B's first deliverable.
+Loop 600 publishes over 60s with incrementing counters. A shell loop spawning
+a container per message is far too slow — use the Phase B generator instead:
 
-Verify:
 ```cmd
-ssh <VM_USER>@<VM_HOST> "docker exec <CH_CONTAINER> clickhouse-client -q \"SELECT count() FROM <DB>.<TABLE> WHERE device = 'test001' AND id_num LIKE 'PHASE-A-S-%'\""
+docker compose -f docker-compose.mqttgen.yml run --rm -e COUNT=1 -e WORKERS=1 -e RATE_HZ=10 -e DURATION_S=60 -e RUN_ID=PHASE-A-S gen
 ```
 
-Expect exactly **600**. Fewer means loss at 10 msg/s from a *single* machine —
-a blocking finding; do not scale until it's understood. Also re-read every
-Prometheus metric from step 3 and record the delta: this is your per-machine
-cost, and multiplying it by 1000 gives the first honest estimate of whether the
-VM can take the target load at all.
+Verify (note the wall-clock start/end you observed the run run between —
+`RUN_ID` is not queryable, see the 2026-08-10 correction above):
+```sql
+SELECT count() FROM <DB>.<TABLE> WHERE device = 'test001' AND created_at BETWEEN '<start>' AND '<end>'
+```
+
+Expect close to **600** — a 2026-08-10 run of this exact shape delivered
+598/600 (99.7%) at the default QOS 0, which is not itself a finding. Meaningfully
+fewer means investigate; see
+[../loadtest/mqtt/verify.md](../loadtest/mqtt/verify.md) for the full
+delivery/completeness/ordering checks. Also re-read every Prometheus metric
+from step 3 and record the delta: this is your per-machine cost, and
+multiplying it by 1000 gives the first honest estimate of whether the VM can
+take the target load at all.
 
 ## Interpretation — where it stopped
 
@@ -391,6 +408,23 @@ VM can take the target load at all.
 | cmd mangles the JSON payload | cmd needs `\"` escaping inside `-m "..."`, and `%` is special | Escape as shown above. Any literal `%` must be doubled. This is why Phase B moves to a Node script fast. |
 | `mosquitto_sub` shows the message but nothing downstream | Device not registered, or registered under a different process/div | Re-run step 2 and confirm the response. |
 | ClickHouse row present but all numerics are 0 | Double-vs-single JSON encoding mismatch | Compare against what 5a showed in Redis. This never raises an error. |
+
+## Phase B — the generator
+
+Implementation: [../loadtest/mqtt/](../loadtest/mqtt/) ([README](../loadtest/mqtt/README.md)),
+built against [docs/plans/2026-08-10-mqtt-ingest-generator.md](plans/2026-08-10-mqtt-ingest-generator.md).
+
+Key env vars (full table in the plan): `COUNT`, `RATE_HZ`, `WORKERS`,
+`CONN_MODE`, `QOS`, `DURATION_S`, `RUN_ID`.
+
+**`achieved` vs `target` is the single most important number the generator
+prints.** If `achieved` falls below ~95% of `target`, the generator itself is
+the bottleneck — every downstream metric from that run is measuring your PC,
+not the VM. Establish the generator's ceiling (Task 8 of the plan) before
+trusting any VM-side conclusion drawn from a run.
+
+Once a run completes, walk delivery, per-device completeness, latency, and
+ordering with [../loadtest/mqtt/verify.md](../loadtest/mqtt/verify.md).
 
 ## Output of Phase A
 

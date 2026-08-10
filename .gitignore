@@ -1,2 +1,3 @@
 loadtest/results/
 loadtest/.env.vm
+loadtest/mqtt/results/
