@@ -4,7 +4,7 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const { getStore } = require("./_store_assy");
+const { getStore } = require("./_store_assy_status");
 
 const startTime = 6;
 const store = getStore("AVS");
@@ -35,7 +35,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   }
 
   return Object.values(currentMachineData).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, "alarm");
+    const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
     let target = 0;
     if (item.target_special > 0) {

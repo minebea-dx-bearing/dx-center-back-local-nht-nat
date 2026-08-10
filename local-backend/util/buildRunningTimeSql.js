@@ -119,7 +119,6 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
       ${finalSelect}
   ` : `
     ${dateHeader}
-
     WITH [base_alarm] AS (
       SELECT
         [mc_no],
