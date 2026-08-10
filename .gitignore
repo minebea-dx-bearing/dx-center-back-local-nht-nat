@@ -1,3 +1,4 @@
 loadtest/results/
 loadtest/.env.vm
-loadtest/mqtt/results/
+loadtest/mqtt/results/*
+!loadtest/mqtt/results/capacity.md
