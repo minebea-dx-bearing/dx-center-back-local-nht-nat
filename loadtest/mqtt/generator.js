@@ -12,6 +12,8 @@
 require("dotenv").config({ path: "/loadtest/.env.vm" });
 
 const cluster = require("node:cluster");
+const fs = require("node:fs");
+const path = require("node:path");
 const mqtt = require("mqtt");
 const { deviceIds, topic, macFor } = require("./devices");
 const { shardFor } = require("./shard");
@@ -31,8 +33,23 @@ const TICK_MS = 10;
 const MQTT_URL = `mqtt://${process.env.MQTT_HOST}:${process.env.MQTT_PORT}`;
 
 if (cluster.isPrimary) {
+  // Every report line is echoed to a per-run file, not just stdout — stdout
+  // scrolls out of a terminal's buffer, and nothing else in this tool
+  // persists a run's results (unlike ../run-sweep.sh's per-scenario files).
+  const RESULTS_DIR = "/loadtest/mqtt/results";
+  fs.mkdirSync(RESULTS_DIR, { recursive: true });
+  const logPath = path.join(RESULTS_DIR, `${RUN_ID}.log`);
+  const log = (line) => {
+    console.log(line);
+    fs.appendFileSync(logPath, line + "\n");
+  };
+
   const counts = new Array(WORKERS).fill(0);
   const targetPerSecond = COUNT * RATE_HZ;
+
+  log(
+    `[gen] run=${RUN_ID} startedAt=${new Date().toISOString()} count=${COUNT} rate_hz=${RATE_HZ} workers=${WORKERS} conn_mode=${CONN_MODE} qos=${QOS} duration_s=${DURATION_S} target=${targetPerSecond}/s`
+  );
 
   for (let id = 0; id < WORKERS; id++) {
     const worker = cluster.fork({ WORKER_ID: String(id) });
@@ -51,17 +68,16 @@ if (cluster.isPrimary) {
     const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
     const t = Math.round((Date.now() - startedAt) / 1000);
 
-    console.log(
-      `[gen] t=${t}s target=${targetPerSecond}/s achieved=${achieved}/s clients=${COUNT} rssMB=${rssMB}`
-    );
+    log(`[gen] t=${t}s target=${targetPerSecond}/s achieved=${achieved}/s clients=${COUNT} rssMB=${rssMB}`);
     if (achieved < targetPerSecond * 0.95) {
-      console.warn(
+      log(
         `[gen] WARNING: achieved (${achieved}/s) is below 95% of target (${targetPerSecond}/s) — the generator, not the VM, may be the bottleneck`
       );
     }
 
     if (DURATION_S > 0 && t >= DURATION_S) {
       clearInterval(interval);
+      log(`[gen] run=${RUN_ID} finished totalPublished=${total}`);
       for (const w of Object.values(cluster.workers)) w.send({ type: "stop" });
       setTimeout(() => process.exit(0), 2000);
     }
@@ -95,6 +111,10 @@ if (cluster.isPrimary) {
 
       const client = mqtt.connect(MQTT_URL, { clientId: device });
       clients.set(device, client);
+      // An unhandled 'error' event is a Node uncaught exception — without
+      // this listener, one failed connect silently kills the whole worker
+      // (and every device in its shard) with no visible cause.
+      client.on("error", (e) => console.error(`[gen] worker=${workerId} device=${device} mqtt error: ${e.message}`));
       // Registered here, at creation time — not in a separate loop after this
       // one finishes. With enough devices, the stagger loop itself can take
       // longer than a connect round-trip, so an early client's `connect`
@@ -130,6 +150,7 @@ if (cluster.isPrimary) {
       const ready = [];
       for (let i = 0; i < POOL_SIZE; i++) {
         const client = mqtt.connect(MQTT_URL, { clientId: `${RUN_ID}-w${workerId}-p${i}` });
+        client.on("error", (e) => console.error(`[gen] worker=${workerId} pool=${i} mqtt error: ${e.message}`));
         pool.push(client);
         // Listener registered at creation time, same reasoning as connectStaggered.
         ready.push(new Promise((resolve) => client.once("connect", resolve)));
@@ -184,5 +205,11 @@ if (cluster.isPrimary) {
 
       if (process.send) process.send({ type: "published", total: published });
     }, TICK_MS);
-  })();
+  })().catch((e) => {
+    // Without this, a rejected promise anywhere in setup (e.g. a connect
+    // that never resolves for a reason other than the race above) leaves the
+    // worker silently reporting 0 forever instead of explaining why.
+    console.error(`[gen] worker=${workerId} setup failed:`, e);
+    process.exit(1);
+  });
 }

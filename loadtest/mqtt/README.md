@@ -21,5 +21,6 @@ docker compose -f ../../docker-compose.mqttgen.yml run --rm gen
 
 ## Reference
 
+- **Runbook (start here to actually run this):** [../../docs/mqtt-load-test-runbook.md](../../docs/mqtt-load-test-runbook.md)
 - Plan: [../../docs/plans/2026-08-10-mqtt-ingest-generator.md](../../docs/plans/2026-08-10-mqtt-ingest-generator.md)
 - Phase A findings (topology, encoding, valid status/alarm values): [../../docs/mqtt-ingest-load-test.md](../../docs/mqtt-ingest-load-test.md)

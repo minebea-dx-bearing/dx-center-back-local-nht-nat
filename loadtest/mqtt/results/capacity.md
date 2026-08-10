@@ -27,6 +27,42 @@ the gap. Given `achieved` tracked `target` cleanly through 1000 machines and
 RSS stayed flat, CPU headroom was very unlikely to be the constraint here,
 but that's inference, not a measurement.
 
+## Ceiling found: COUNT=2000 hits a broker-side connection limit, not a generator one
+
+Tested 2026-08-10, after the 1000-machine ramp above. `COUNT=2000` (target
+20,000 msg/s) produced **achieved=0/s for the entire 60s run** — a different
+failure mode than the COUNT=50 race below, and not fixed by that fix.
+
+Root cause: `generator.js` waits for **every** client in a shard to connect
+before it starts publishing anything. Diagnosed directly (bypassing the
+generator) by opening 2000 simultaneous raw MQTT connections to the VM
+broker: **1011 connected, 1385 got `ECONNREFUSED`**, and the rest cycled
+`mqtt.js`'s default infinite reconnect without ever succeeding. `ECONNREFUSED`
+is an active refusal (not a timeout or silent drop), which points at a
+**configured connection cap on the broker itself** — Mosquitto's
+`max_connections`, or an OS file-descriptor limit on that process — not
+something this PC, the network, or the generator's code controls. 1011 lands
+suspiciously close to a round configured value like 1000.
+
+Caveat: that measurement was 2000 **simultaneous, unstaggered** connections
+from one process, not the generator's actual staggered/per-worker approach —
+the real ceiling under proper stagger could differ slightly. But the
+mechanism (broker actively refusing past ~1000) explains the generator's
+`achieved=0` cleanly: with `COUNT=2000` split across 4 workers (500 devices
+each), failures were scattered across the device range, so essentially every
+worker ended up with at least one un-connectable device, hanging that
+worker's "wait for all clients" step forever and zeroing its `achieved` for
+the whole run.
+
+**Verdict: as the VM is configured today, ~1000–1200 concurrent connections
+is the real ceiling — not 2000, and not a generator limitation.** If 2000
+real machines becomes an actual requirement, that's a broker-config
+conversation with whoever administers the VM's Mosquitto instance, not
+something to chase further in this codebase. Separately, `generator.js`'s
+all-or-nothing connect wait is itself a fragility worth fixing regardless of
+where the real ceiling lands — one stuck client currently zeroes an entire
+run instead of the run degrading gracefully; not done as of this writing.
+
 ## Note: the COUNT=50 step required a generator fix mid-ramp
 
 The first COUNT=50 attempt (before COUNT=10) failed completely —

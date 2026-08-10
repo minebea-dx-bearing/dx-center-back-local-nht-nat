@@ -414,7 +414,11 @@ take the target load at all.
 Implementation: [../loadtest/mqtt/](../loadtest/mqtt/) ([README](../loadtest/mqtt/README.md)),
 built against [docs/plans/2026-08-10-mqtt-ingest-generator.md](plans/2026-08-10-mqtt-ingest-generator.md).
 
-Key env vars (full table in the plan): `COUNT`, `RATE_HZ`, `WORKERS`,
+**To actually run it, use [mqtt-load-test-runbook.md](mqtt-load-test-runbook.md)**
+— step-by-step commands, what every env var means and why, and how to read
+the output. This section is just a pointer.
+
+Key env vars (full table in the runbook): `COUNT`, `RATE_HZ`, `WORKERS`,
 `CONN_MODE`, `QOS`, `DURATION_S`, `RUN_ID`.
 
 **`achieved` vs `target` is the single most important number the generator
