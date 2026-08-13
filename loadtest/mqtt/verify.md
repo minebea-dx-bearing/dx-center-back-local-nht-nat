@@ -27,7 +27,7 @@ SELECT count() FROM <DB>.<TABLE>
 WHERE device = '<device>' AND created_at BETWEEN '<start>' AND '<end>'
 ```
 
-Compare against `COUNT * RATE_HZ * DURATION_S` (the generator's target, not
+Compare against `COUNT * (DURATION_S / DATA_INTERVAL_S)` (the generator's target, not
 its self-reported `achieved`, which is itself derived from the same publish
 count and so cannot catch broker-side loss). At QOS 0, some loss is expected
 and not itself a bug — a 2026-08-10 smoke run (1 machine, 10 msg/s, 60s) delivered
@@ -36,7 +36,7 @@ and not itself a bug — a 2026-08-10 smoke run (1 machine, 10 msg/s, 60s) deliv
 ## 2. Per-10-second-bucket rate
 
 Because `created_at` only has 10s resolution, this doubles as both the
-completeness and the "did the generator actually sustain RATE_HZ" check:
+completeness and the "did the generator actually sustain DATA_INTERVAL_S" check:
 
 ```sql
 SELECT created_at, count() AS n FROM <DB>.<TABLE>
@@ -44,14 +44,14 @@ WHERE device = '<device>' AND created_at BETWEEN '<start>' AND '<end>'
 GROUP BY created_at ORDER BY created_at
 ```
 
-Each full bucket should read `RATE_HZ * 10`. The first and last buckets will
+Each full bucket should read `10 / DATA_INTERVAL_S`. The first and last buckets will
 be partial (the run doesn't start/end on a 10s boundary) — expect those two,
 not the interior ones, to be short.
 
 ## 3. Per-device completeness
 
 At scale (COUNT > 1), run query 1 with `GROUP BY device` instead of a fixed
-device, `HAVING count() < <EXPECTED_PER_DEVICE>` (= `RATE_HZ * DURATION_S`).
+device, `HAVING count() < <EXPECTED_PER_DEVICE>` (= `DURATION_S / DATA_INTERVAL_S`).
 Loss uniform across devices points at the broker or a shared consumer stage;
 loss concentrated in a handful of devices points at per-connection issues
 instead (e.g. a client that reconnected mid-run, or a shard a worker never

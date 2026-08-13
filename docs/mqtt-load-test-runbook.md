@@ -64,15 +64,18 @@ scale to the full `COUNT=1000`.
 
 ```bash
 MSYS_NO_PATHCONV=1 docker compose -f docker-compose.mqttgen.yml run --rm \
-  -e COUNT=1 -e WORKERS=1 -e RATE_HZ=10 -e DURATION_S=60 -e RUN_ID=my-first-run gen
+  -e COUNT=1 -e WORKERS=1 -e DATA_INTERVAL_S=1 -e DURATION_S=60 -e RUN_ID=my-first-run gen
 ```
 
 ### What each `-e` means and why it matters
 
 | Var | Meaning | Start with | Why |
 |---|---|---|---|
-| `COUNT` | How many simulated machines (`test000`…`test999`) | `1` | Each one opens its own MQTT connection and publishes independently. This is the main throughput dial — `COUNT × RATE_HZ` is your target message rate. |
-| `RATE_HZ` | `data` messages per machine per second | `10` | Real devices cycle every 1–18s (§ [mqtt-ingest-load-test.md](mqtt-ingest-load-test.md)); `10` is a deliberate **~30× stress** target, not a realistic simulation. Lower it if you want a realistic-cadence comparison run. |
+| `COUNT` | How many simulated machines (`test000`…`test999`) | `1` | Each one opens its own MQTT connection and publishes independently. This is the main throughput dial — `COUNT / DATA_INTERVAL_S` is your target message rate. |
+| `DATA_INTERVAL_S` | Seconds between `data` messages, per machine | `1` | Real devices cycle every 1–18s (§ [mqtt-ingest-load-test.md](mqtt-ingest-load-test.md)); `1` is a deliberate stress target, not a realistic simulation. Raise it if you want a realistic-cadence comparison run. |
+| `STATUS_INTERVAL_S` | Seconds between `status` messages, per machine | `300` (default) | Status changes are infrequent by design — fires on its own per-machine schedule independent of `data`. |
+| `ALARM_INTERVAL_S` | Seconds between `alarm` messages, per machine | `300` (default) | Same cadence model as `STATUS_INTERVAL_S`, independent schedule. |
+| `MQTT_INTERVAL_S` | Seconds between `mqtt` (device-info) messages, per machine | `300` (default) | Previously sent once at connect only; now recurs on this interval like the other topics. |
 | `WORKERS` | Node `cluster` worker processes, each owning a slice of `COUNT` | `1` for small runs, `4` (default) for `COUNT` ≥ 100 | One worker running 1000 machines on a single event-loop thread is the generator's own bottleneck, not the broker's. More workers spread the scheduling load across CPU cores. |
 | `DURATION_S` | Run length in seconds | `60` | `0` means **run until killed** — don't use that by accident, it'll quietly keep publishing to the VM indefinitely. |
 | `RUN_ID` | A label baked into each message's `id_num` marker (`<RUN_ID>-<device>-<seq>`) | anything memorable, e.g. `smoke-01` | `id_num` does **not** reach ClickHouse (see §3.1 below) — but it's still useful in Mosquitto/Kafka-side inspection, and it's how you tell your own runs apart in logs. |
@@ -89,7 +92,8 @@ Every 10 seconds you'll see one line like:
 ```
 
 - **`t`** — seconds since the run started.
-- **`target`** — `COUNT × RATE_HZ`, the rate you asked for.
+- **`target`** — `COUNT / DATA_INTERVAL_S`, the `data`-topic rate you asked
+  for (status/alarm/mqtt are low-frequency and excluded from this figure).
 - **`achieved`** — the rate the generator actually managed to publish, measured
   from its own publish count, **not** from anything the broker or ClickHouse
   confirms received. This tells you whether *the generator* kept up — it says
@@ -158,9 +162,10 @@ running on different hardware or the number needs re-checking, redo the ramp
 yourself:
 
 ```bash
+# DATA_INTERVAL_S=0.1 reproduces the old RATE_HZ=10 stress cadence (10 data msg/s/machine)
 for n in 10 50 100 250 500 1000; do
   MSYS_NO_PATHCONV=1 docker compose -f docker-compose.mqttgen.yml run --rm \
-    -e COUNT=$n -e RATE_HZ=10 -e DURATION_S=60 -e RUN_ID=ramp-$n gen
+    -e COUNT=$n -e DATA_INTERVAL_S=0.1 -e DURATION_S=60 -e RUN_ID=ramp-$n gen
 done
 ```
 

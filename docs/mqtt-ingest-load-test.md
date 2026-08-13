@@ -371,7 +371,7 @@ Loop 600 publishes over 60s with incrementing counters. A shell loop spawning
 a container per message is far too slow — use the Phase B generator instead:
 
 ```cmd
-docker compose -f docker-compose.mqttgen.yml run --rm -e COUNT=1 -e WORKERS=1 -e RATE_HZ=10 -e DURATION_S=60 -e RUN_ID=PHASE-A-S gen
+docker compose -f docker-compose.mqttgen.yml run --rm -e COUNT=1 -e WORKERS=1 -e DATA_INTERVAL_S=0.1 -e DURATION_S=60 -e RUN_ID=PHASE-A-S gen
 ```
 
 Verify (note the wall-clock start/end you observed the run run between —
@@ -418,7 +418,8 @@ built against [docs/plans/2026-08-10-mqtt-ingest-generator.md](plans/2026-08-10-
 — step-by-step commands, what every env var means and why, and how to read
 the output. This section is just a pointer.
 
-Key env vars (full table in the runbook): `COUNT`, `RATE_HZ`, `WORKERS`,
+Key env vars (full table in the runbook): `COUNT`, `DATA_INTERVAL_S`,
+`STATUS_INTERVAL_S`, `ALARM_INTERVAL_S`, `MQTT_INTERVAL_S`, `WORKERS`,
 `CONN_MODE`, `QOS`, `DURATION_S`, `RUN_ID`.
 
 **`achieved` vs `target` is the single most important number the generator

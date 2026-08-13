@@ -21,7 +21,6 @@ const { newMachineState, buildDataPayload } = require("./payload");
 const { STATUS_VALUES, ALARM_VALUES } = require("./values");
 
 const COUNT = Number(process.env.COUNT || 1000);
-const RATE_HZ = Number(process.env.RATE_HZ || 10);
 const WORKERS = Number(process.env.WORKERS || 4);
 const CONN_MODE = process.env.CONN_MODE || "per-device"; // "per-device" | "pooled"
 const POOL_SIZE = Number(process.env.POOL_SIZE || 20);
@@ -29,6 +28,13 @@ const QOS = Number(process.env.QOS || 0);
 const DURATION_S = Number(process.env.DURATION_S || 60); // 0 = until killed
 const RUN_ID = process.env.RUN_ID || String(Date.now());
 const TICK_MS = 10;
+// Per-machine, per-topic cadence — each fires on its own schedule instead of
+// a shared RATE_HZ or a dice roll, so data/status/alarm/mqtt can be tuned
+// independently to match observed device behavior.
+const DATA_INTERVAL_S = Number(process.env.DATA_INTERVAL_S || 1);
+const STATUS_INTERVAL_S = Number(process.env.STATUS_INTERVAL_S || 300);
+const ALARM_INTERVAL_S = Number(process.env.ALARM_INTERVAL_S || 300);
+const MQTT_INTERVAL_S = Number(process.env.MQTT_INTERVAL_S || 300);
 
 const MQTT_URL = `mqtt://${process.env.MQTT_HOST}:${process.env.MQTT_PORT}`;
 
@@ -45,10 +51,12 @@ if (cluster.isPrimary) {
   };
 
   const counts = new Array(WORKERS).fill(0);
-  const targetPerSecond = COUNT * RATE_HZ;
+  // status/alarm/mqtt are low-frequency by design and left out of the
+  // target/s figure — data dominates volume and is what achieved/s tracks.
+  const targetPerSecond = COUNT / DATA_INTERVAL_S;
 
   log(
-    `[gen] run=${RUN_ID} startedAt=${new Date().toISOString()} count=${COUNT} rate_hz=${RATE_HZ} workers=${WORKERS} conn_mode=${CONN_MODE} qos=${QOS} duration_s=${DURATION_S} target=${targetPerSecond}/s`
+    `[gen] run=${RUN_ID} startedAt=${new Date().toISOString()} count=${COUNT} data_interval_s=${DATA_INTERVAL_S} status_interval_s=${STATUS_INTERVAL_S} alarm_interval_s=${ALARM_INTERVAL_S} mqtt_interval_s=${MQTT_INTERVAL_S} workers=${WORKERS} conn_mode=${CONN_MODE} qos=${QOS} duration_s=${DURATION_S} target=${targetPerSecond}/s`
   );
 
   for (let id = 0; id < WORKERS; id++) {
@@ -120,37 +128,48 @@ if (cluster.isPrimary) {
       // longer than a connect round-trip, so an early client's `connect`
       // event can fire and be lost before a later-registered listener exists,
       // permanently hanging the caller's readiness wait.
-      ready.push(
-        new Promise((resolve) => {
-          client.once("connect", () => {
-            publish(client, topic("mqtt", device), { mac_id: macFor(device), broker: 1, modbus: 1, version: "2.1.0" }, QOS);
-            resolve();
-          });
-        })
-      );
+      // No longer publishes here — the `mqtt` topic now fires on its own
+      // recurring schedule in the tick loop below, same as status/alarm.
+      ready.push(new Promise((resolve) => client.once("connect", resolve)));
     }
     await Promise.all(ready);
   };
 
-  const tickIntervalMs = 1000 / RATE_HZ;
-  // TICK_MS is the scheduler's own poll granularity — at RATE_HZ high enough
-  // that tickIntervalMs < TICK_MS, a single poll must fire more than once per
-  // machine to keep up (e.g. RATE_HZ=1000 needs 10 fires per 10ms poll).
-  // Capped at 3x the nominal expectation so a genuinely overloaded run
-  // degrades (a lower `achieved`, visibly) instead of a growing unbounded
-  // backlog spiraling the process further behind every tick.
-  const maxCatchupPerTick = Math.max(1, Math.ceil((TICK_MS / tickIntervalMs) * 3));
+  const dataIntervalMs = DATA_INTERVAL_S * 1000;
+  const statusIntervalMs = STATUS_INTERVAL_S * 1000;
+  const alarmIntervalMs = ALARM_INTERVAL_S * 1000;
+  const mqttIntervalMs = MQTT_INTERVAL_S * 1000;
+  // TICK_MS is the scheduler's own poll granularity — at an interval short
+  // enough that intervalMs < TICK_MS, a single poll must fire more than once
+  // per machine to keep up (e.g. a 1ms interval needs 10 fires per 10ms
+  // poll). Capped at 3x the nominal expectation so a genuinely overloaded
+  // run degrades (a lower `achieved`, visibly) instead of a growing
+  // unbounded backlog spiraling the process further behind every tick.
+  const maxCatchup = (intervalMs) => Math.max(1, Math.ceil((TICK_MS / intervalMs) * 3));
+  const maxCatchupData = maxCatchup(dataIntervalMs);
+  const maxCatchupStatus = maxCatchup(statusIntervalMs);
+  const maxCatchupAlarm = maxCatchup(alarmIntervalMs);
+  const maxCatchupMqtt = maxCatchup(mqttIntervalMs);
 
-  const machines = shard.map((device, i) => ({
-    device,
-    state: newMachineState(device, Number(process.env.RUN_ID_SEED || 1) + i),
-    seq: 0,
-    status: "run",
-    // Phase offset spreads publishes evenly across each second instead of
-    // 1000 machines bursting together RATE_HZ times a second. Set once at
-    // startup; nextAt below advances independently per machine from there.
-    nextAt: Date.now() + (i % Math.max(1, Math.round(tickIntervalMs))),
-  }));
+  // Phase offset spreads each topic's publishes evenly across its own
+  // interval instead of every machine in the shard bursting together —
+  // scaled by position within the shard so it works for both a 1s data
+  // interval and a 300s status/alarm/mqtt interval.
+  const phase = (i, intervalMs) => Math.round((i / Math.max(1, shard.length)) * intervalMs);
+
+  const machines = shard.map((device, i) => {
+    const now = Date.now();
+    return {
+      device,
+      state: newMachineState(device, Number(process.env.RUN_ID_SEED || 1) + i),
+      seq: 0,
+      status: "run",
+      nextDataAt: now + phase(i, dataIntervalMs),
+      nextStatusAt: now + phase(i, statusIntervalMs),
+      nextAlarmAt: now + phase(i, alarmIntervalMs),
+      nextMqttAt: now + phase(i, mqttIntervalMs),
+    };
+  });
 
   (async () => {
     if (CONN_MODE === "pooled") {
@@ -163,9 +182,6 @@ if (cluster.isPrimary) {
         ready.push(new Promise((resolve) => client.once("connect", resolve)));
       }
       await Promise.all(ready);
-      for (const m of machines) {
-        publish(pool[shard.indexOf(m.device) % POOL_SIZE], topic("mqtt", m.device), { mac_id: macFor(m.device), broker: 1, modbus: 1, version: "2.1.0" }, QOS);
-      }
     } else {
       await connectStaggered(shard);
     }
@@ -186,35 +202,39 @@ if (cluster.isPrimary) {
         const client = clientFor(m.device, i);
         if (!client) continue;
 
-        // Catch-up loop, not a single `if`: at RATE_HZ high enough that
-        // tickIntervalMs < TICK_MS, one poll must fire multiple times per
-        // machine to hit target — a single `if` here silently caps every
-        // machine at 1000/TICK_MS regardless of RATE_HZ (measured 2026-08-10:
+        // Catch-up loop, not a single `if`: at an interval short enough that
+        // intervalMs < TICK_MS, one poll must fire multiple times per
+        // machine to hit target — a single `if` here would silently cap
+        // every machine at 1000/TICK_MS regardless of the configured
+        // interval (measured 2026-08-10 with the old RATE_HZ scheme:
         // RATE_HZ=1000 only achieved ~95-98/s before this fix).
-        for (let fired = 0; now >= m.nextAt && fired < maxCatchupPerTick; fired++) {
-          // Advance from the machine's own last-fire time, not `now` —
-          // advancing from `now` would let a delayed tick permanently skew
-          // that machine's cadence away from RATE_HZ instead of catching up.
-          m.nextAt += tickIntervalMs;
-
+        for (let fired = 0; now >= m.nextDataAt && fired < maxCatchupData; fired++) {
+          m.nextDataAt += dataIntervalMs;
           m.seq++;
           const marker = `${RUN_ID}-${m.device}-${m.seq}`;
           publish(client, topic("data", m.device), buildDataPayload(m.state, marker), QOS);
-
-          // Status and alarm are rare edge events, not per-tick, to match
-          // observed cadence — see Task 7 Step 3 of the generator plan.
-          if (m.state.rnd() < 0.002) {
-            m.status = STATUS_VALUES[Math.floor(m.state.rnd() * STATUS_VALUES.length)];
-            publish(client, topic("status", m.device), { status: m.status }, QOS);
-          }
-          if (m.state.rnd() < 0.001) {
-            const alarm = ALARM_VALUES[Math.floor(m.state.rnd() * ALARM_VALUES.length)];
-            publish(client, topic("alarm", m.device), { status: alarm }, QOS);
-          }
         }
-        // Still behind after the cap — resync to `now` rather than let debt
-        // compound tick over tick; the shortfall shows up in `achieved`.
-        if (now >= m.nextAt) m.nextAt = now + tickIntervalMs;
+        if (now >= m.nextDataAt) m.nextDataAt = now + dataIntervalMs;
+
+        for (let fired = 0; now >= m.nextStatusAt && fired < maxCatchupStatus; fired++) {
+          m.nextStatusAt += statusIntervalMs;
+          m.status = STATUS_VALUES[Math.floor(m.state.rnd() * STATUS_VALUES.length)];
+          publish(client, topic("status", m.device), { status: m.status }, QOS);
+        }
+        if (now >= m.nextStatusAt) m.nextStatusAt = now + statusIntervalMs;
+
+        for (let fired = 0; now >= m.nextAlarmAt && fired < maxCatchupAlarm; fired++) {
+          m.nextAlarmAt += alarmIntervalMs;
+          const alarm = ALARM_VALUES[Math.floor(m.state.rnd() * ALARM_VALUES.length)];
+          publish(client, topic("alarm", m.device), { status: alarm }, QOS);
+        }
+        if (now >= m.nextAlarmAt) m.nextAlarmAt = now + alarmIntervalMs;
+
+        for (let fired = 0; now >= m.nextMqttAt && fired < maxCatchupMqtt; fired++) {
+          m.nextMqttAt += mqttIntervalMs;
+          publish(client, topic("mqtt", m.device), { mac_id: macFor(m.device), broker: 1, modbus: 1, version: "2.1.0" }, QOS);
+        }
+        if (now >= m.nextMqttAt) m.nextMqttAt = now + mqttIntervalMs;
       }
 
       busy = false;
