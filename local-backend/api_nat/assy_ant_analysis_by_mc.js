@@ -1011,116 +1011,114 @@ router.get("/production_hour_all_mc/:date/:shift", async (req, res) => {
       FROM [data]
       ORDER BY registered ASC
     `);
+    
+    let master = await dbms.query(`
+      with [m] as (
+        SELECT [registered]
+          ,[mc_no]
+          ,[part_no]
+          ,[target_ct]
+          ,[target_utl]
+          ,[target_yield]
+          ,[target_special]
+          ,[ring_factor]
+          ,FLOOR([target_special]/24) AS [target_by_hr]
+          ,ROW_NUMBER() over (partition by mc_no order by [registered] desc) as rn
+        FROM [nat_mc_assy_ant_new].[dbo].[DATA_MASTER_ANT]
+      )
+      select * from m
+      where rn = 1
+    `)
 
     if (data[0].length > 0) {
-      const arrayData = (shift === 'M') ? data[0].filter(item => item.shift === 'M') : data[0].filter(item => item.shift === 'N');
-      // console.log(arrayData)
-      
+      const arrayData = data[0];
       const groupedData = arrayData.reduce((acc, item) => {
+        // สร้าง key ที่เป็น mc_no
         const key = `${item.mc_no}`;
-        // 2. ถ้ายังไม่เคยมี Key นี้ใน Object ผลลัพธ์ (acc) ให้สร้างโครงสร้างเริ่มต้นไว้ก่อน
-        if (!acc[key]) {
-          acc[key] = []
-        }
-        acc[key].push(item);
+        (acc[key] = acc[key] || []).push(item);
         return acc;
       }, {});
+      // console.log(groupedData)
+      const defaultHours = (shift === "M") ? [
+        "07:00",
+        "08:00",
+        "09:00",
+        "10:00",
+        "11:00",
+        "12:00",
+        "13:00",
+        "14:00",
+        "15:00",
+        "16:00",
+        "17:00",
+        "18:00" 
+      ] : [
+        "19:00",
+        "20:00",
+        "21:00",
+        "22:00",
+        "23:00",
+        "00:00",
+        "01:00",
+        "02:00",
+        "03:00",
+        "04:00",
+        "05:00",
+        "06:00",
+      ]
 
-      Object.keys(groupedData).forEach((key) => {
-        // 1. กำหนดช่วงเวลา defaultHours ตามกะ (Shift)
-        const defaultHours = (shift === "M") ? [
-          "07:00",
-          "08:00",
-          "09:00",
-          "10:00",
-          "11:00",
-          "12:00",
-          "13:00",
-          "14:00",
-          "15:00",
-          "16:00",
-          "17:00",
-          "18:00" 
-        ] : [
-          "19:00",
-          "20:00",
-          "21:00",
-          "22:00",
-          "23:00",
-          "00:00",
-          "01:00",
-          "02:00",
-          "03:00",
-          "04:00",
-          "05:00",
-          "06:00",
-        ]
-        // 2. แปลงข้อมูลใน groupedData[key] ให้เป็น Map โดยใช้ชั่วโมง (HH) เป็น Key
+      Object.keys(groupedData).forEach((key, index) => {
+        // key = mc_no พอ groupedData[key] จะเป็นข้อมูลของ mc_no นี้
         const currentGroupData = groupedData[key] || [];
+        let previousItem = null;
         const dataByHourMap = {};
 
         currentGroupData.forEach((item) => {
-          if (item && item.cat_time) {
-            const hour = item.cat_time.split(":")[0]; // ดึง "07"
-            dataByHourMap[hour] = item;
+          if (!item?.cat_time) return;
+
+          let calOk = item.daily_ok;
+          let calTotal = item.daily_total;
+
+          if (previousItem) {
+            calTotal = item.daily_total - previousItem.daily_total;
+            calOk = item.daily_ok - previousItem.daily_ok;
+            if (calTotal < 0) calTotal = item.daily_total;
+            if (calOk < 0) calOk = item.daily_ok;
           }
+
+          const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
+          const hourKey = item.cat_time.split(":")[0];
+
+          // เก็บค่าที่คำนวณเสร็จแล้วลง Map ทันที
+          dataByHourMap[hourKey] = {
+            calOk,
+            yieldData: Number(currentYield.toFixed(2)),
+            cat_time: item.cat_time,
+          };
+
+          previousItem = item;
         });
 
-        let yieldData = [];
-        let calDataOk = [];
-        let calDataNg = [];
-        let finalDate = [];
-        let previousItem = null; // ตัวแประจำชั่วโมงก่อนหน้าที่มีข้อมูล ไว้ทำผลต่าง
+        // 3.2 จัดลงช่องเวลา defaultHours ด้วย .map() และแยก Array ด้วย Destructuring
+        const groupDataOk = [];
+        const groupYieldData = [];
+        const finalDate = [];
 
-        // 3. วนลูปตาม defaultHours ของกะนั้นๆ
         defaultHours.forEach((hourStr) => {
-          const hourKey = hourStr.split(":")[0]; // ดึง "07"
-          const currentItem = dataByHourMap[hourKey]; // ค้นหาข้อมูลในชั่วโมงนี้
+          const hourKey = hourStr.split(":")[0];
+          const match = dataByHourMap[hourKey];
 
-          // 3.1 เก็บค่าเวลาจริง (ถ้าไม่มีให้ใช้ HH:00 ตาม default)
-          finalDate.push(currentItem ? currentItem.cat_time : hourStr);
-
-          // 3.2 กรณีชั่วโมงนี้ "ไม่มีข้อมูลใน DB"
-          if (!currentItem) {
-            calDataOk.push(0);
-            calDataNg.push(0);
-            yieldData.push(0);
-            return; // ข้ามไปชั่วโมงถัดไป
-          }
-
-          // 2.3 กรณีที่มีข้อมูลชั่วโมงนี้
-          // ถ้ายังไม่มี previousItem (แปลว่าเพิ่งเจอข้อมูลชั่วโมงแรกสุดที่มีอยู่จริง)
-          if (!previousItem) {
-            calDataOk.push(currentItem.daily_ok);
-            calDataNg.push(currentItem.daily_ng);
-            const initialYield =currentItem.daily_total === 0 ? 0 : (currentItem.daily_ok / currentItem.daily_total) * 100;
-            yieldData.push(Number(initialYield.toFixed(2)));
-          } else {
-            // กรณีมีข้อมูลชั่วโมงก่อนหน้า ให้หาผลต่าง
-            let calTotal = currentItem.daily_total - previousItem.daily_total;
-            let calOk = currentItem.daily_ok - previousItem.daily_ok;
-            let calNg = currentItem.daily_ng - previousItem.daily_ng;
-
-            // ดักกรณี Counter ของเครื่องจักรโดน Reset (ค่าติดลบ)
-            if (calTotal < 0) calTotal = currentItem.daily_total;
-            if (calOk < 0) calOk = currentItem.daily_ok;
-            if (calNg < 0) calNg = currentItem.daily_ng;
-
-            calDataOk.push(calOk);
-            calDataNg.push(calNg);
-
-            const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
-            yieldData.push(Number(currentYield.toFixed(2)));
-          }
-
-          // อัปเดตตัวแปรไว้ลบในชั่วโมงถัดไป
-          previousItem = currentItem;
-        })
+          groupDataOk.push(match ? match.calOk : 0);
+          groupYieldData.push(match ? match.yieldData : 0);
+          finalDate.push(match ? match.cat_time : hourStr);
+        });
 
         groupedData[key] = {
-          data_ok: calDataOk,
-          data_ng: calDataNg,
-          yield: yieldData,
+          mc_no: key.toLocaleUpperCase(),
+          data_ok: groupDataOk,
+          yield: groupYieldData,
+          target: master[0][index],
+          daily_yield: currentGroupData.at(-1).yield,
           data_raw: data[0],
           data_date: finalDate,
           success: true,
