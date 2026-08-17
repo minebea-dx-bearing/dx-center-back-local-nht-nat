@@ -1213,6 +1213,110 @@ EXEC sp_executesql
     return avs[0]
 };
 
+const queryAlu = async (month) => {
+    const alu = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SET @sql = '
+WITH [base] AS (
+    SELECT 
+        [registered]
+        , CASE
+            WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        , CASE
+            WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
+            ELSE ''M''
+        END AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [prod_cnt] as [daily_ok]
+    FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6,18)
+),
+[calc] AS (
+    SELECT
+        [work_date]
+        , [shift]
+        , [mc_no]
+        ,CASE WHEN [shift] = ''M'' THEN [daily_ok]
+			ELSE CASE WHEN [daily_ok] - LAG([daily_ok]) OVER (PARTITION BY [mc_no] ORDER BY [registered]) < 0 THEN [daily_ok]
+			ELSE [daily_ok] - LAG([daily_ok]) OVER (PARTITION BY [mc_no] ORDER BY [registered])
+			END
+        END AS [daily_ok]
+    FROM [base]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no]
+        , [shift]
+        , CONVERT(varchar(10), [work_date], 23) AS [work_date]
+        , [title]
+        , [value]
+    FROM [calc]
+    CROSS APPLY (
+        VALUES
+             (''Packing'', [daily_ok])
+    ) v([title], [value])
+)
+SELECT
+    [mc_no]
+    , [shift]
+    , [title]
+	, ' + @colsIsNull + '
+	, NULL AS [avg]
+    , ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+    [shift],
+CASE title
+    WHEN ''Auto Visual OK'' THEN 1
+	WHEN ''AG'' THEN 2
+	WHEN ''NG'' THEN 3
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date',
+    @Month = @Month;
+    `);
+    return alu[0]
+};
 
 // ----------- report -------------
 const queryMbrReport = async (month) => {
@@ -2259,7 +2363,7 @@ FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
 SET @sql = '
-WITH [aod] AS (
+WITH [avs] AS (
     SELECT 
         [registered]
 		,[process]
@@ -2292,7 +2396,7 @@ WITH [aod] AS (
 		,[total_prod]
 		,([daily_ok] - mt.[target_special]) AS [diff]
 		,[daily_ok]
-	FROM [aod] prod
+	FROM [avs] prod
 	LEFT JOIN [master] mt
 	ON prod.[mc_no] = mt.[mc_no]
     WHERE rn = 1
@@ -2383,68 +2487,191 @@ EXEC sp_executesql
     return avs[0]
 };
 
+const queryAluReport = async (month) => {
+    const alu = await dbms.query(`
+DECLARE @Month date = '${month}-01';
+DECLARE @cols nvarchar(max);
+DECLARE @colsIsNull nvarchar(max);
+DECLARE @sql nvarchar(max);
+DECLARE @total nvarchar(max);
+DECLARE @dayCount nvarchar(max);
+DECLARE @avgExpr nvarchar(max);
+DECLARE @NearestMonth DATE;
+
+;WITH Dates AS (
+    SELECT CAST(@Month AS date) AS d
+    UNION ALL
+    SELECT DATEADD(DAY, 1, d)
+    FROM Dates
+    WHERE d < EOMONTH(@Month)
+)
+SELECT @cols = STRING_AGG(QUOTENAME(CONVERT(varchar(10), d, 23)), ',')
+FROM Dates;
+
+--check is data null?
+SELECT @colsIsNull = STRING_AGG('ISNULL(' + col + ',0) AS ' + col, ',')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT @total = STRING_AGG('ISNULL(' + col + ',0)', ' + ')
+FROM STRING_SPLIT(@cols, ',') split
+CROSS APPLY (SELECT split.value AS col) x;
+
+SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered]), 1)
+FROM [nat_mc_assy_alu].[dbo].[DATA_MASTER_ALU]
+ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
+
+SET @sql = '
+WITH [alu] AS (
+    SELECT 
+        [registered]
+		,[process]
+        ,CASE WHEN DATEPART(HOUR, [registered]) = 6 
+                THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
+            ELSE CONVERT(date, [registered])
+        END AS [work_date]
+        ,[mc_no]
+        ,[prod_cnt] as [daily_ok]
+        ,[prod_cnt] AS [total_prod]
+    FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
+    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND DATEPART(HOUR, [registered]) IN (6)
+),
+[master] AS (
+	SELECT [registered], [mc_no], [target_special], [target_ct] ,
+		ROW_NUMBER() OVER (PARTITION BY [mc_no] ORDER BY registered desc) as rn
+    FROM [nat_mc_assy_alu].[dbo].[DATA_MASTER_ALU]
+    WHERE [registered] <= EOMONTH(@NearestMonth)
+),
+[merge] AS (
+	SELECT
+		prod.[work_date]
+		,prod.[process]
+		,prod.[mc_no]
+		,Null AS [count_mc_no]
+		,mt.[target_ct]
+		,mt.[target_special]
+		,[total_prod]
+		,([daily_ok] - mt.[target_special]) AS [diff]
+		,[daily_ok]
+	FROM [alu] prod
+	LEFT JOIN [master] mt
+	ON prod.[mc_no] = mt.[mc_no]
+    WHERE rn = 1
+),
+[daily] AS (
+	SELECT 
+		work_date
+		,MAX(LEFT([mc_no], 3)) AS [mc_no]
+		,MAX([process]) AS [process]
+		,COUNT(DISTINCT [mc_no]) AS [count_mc_no]
+		,MAX([target_ct]) AS [target_ct]
+		,SUM([target_special]) AS [target_special]
+		,SUM([total_prod]) AS [total_prod]
+		,SUM([diff]) AS [diff]
+		,SUM([daily_ok]) AS [daily_ok]
+	FROM [merge]
+	GROUP BY [work_date]
+),
+[union] AS (
+	SELECT * FROM [merge]
+	UNION
+	SELECT * FROM [daily]
+),
+[cal] AS (
+	SELECT 
+		[work_date]
+		,[mc_no]
+		,[process]
+		,[count_mc_no]
+		,[target_special]
+		,[daily_ok]
+		,[diff]
+		,CASE WHEN [mc_no] NOT LIKE ''%[0-9]'' THEN  ROUND(([total_prod] / ((84600 / [target_ct]) * [count_mc_no])) * 100, 2)
+			ELSE  ROUND(([total_prod]/(84600/[target_ct])) * 100, 2)
+		END AS [utl]
+		,CASE WHEN [total_prod] != 0 THEN  ROUND(([daily_ok] / [total_prod]) * 100, 2)
+			ELSE 0
+		END AS [yield]
+	FROM [union]
+),
+[unpivoted] AS (
+    SELECT
+        [mc_no],
+        CONVERT(varchar(10), [work_date], 23) AS [work_date],
+		[process],
+        [title],
+        [value]
+    FROM [cal]
+    CROSS APPLY (
+        VALUES
+			(''Target'', [target_special])
+			,(''Producion'', [daily_ok])
+			,(''Diff'', [diff])
+			,(''% Util'', [utl])
+            ,(''% Yield'', [yield])
+    ) v([title], [value])
+)
+SELECT
+    UPPER([mc_no]) AS [mc_no],
+	UPPER([process]) AS [process],
+    [title],
+	' + @colsIsNull + ',
+	NULL AS [avg],
+    ' + @total + ' AS [total]
+FROM [unpivoted]
+PIVOT (
+    MAX([value])
+    FOR [work_date] IN (' + @cols + ')
+) p
+ORDER BY 
+    [mc_no],
+CASE title
+    WHEN ''Target'' THEN 1
+	WHEN ''Producion'' THEN 2
+	WHEN ''Diff'' THEN 3
+	WHEN ''% Util'' THEN 4
+	WHEN ''% Yield'' THEN 5
+    ELSE 99
+END;
+';
+
+EXEC sp_executesql 
+    @sql,
+    N'@Month date, @NearestMonth date',
+    @Month = @Month,
+	@NearestMonth = @NearestMonth;
+    `);
+    return alu[0]
+};
 
 // ----------------router -----------------
 router.post("/data", async (req, res) => {
   try {
-    const {selectedMonth, selectedProcess} = req.body;
-    console.log("Received month:", selectedMonth, "Received process:", selectedProcess);
-    let mbrf = {};
-    let mbr = {};
-    let arp = {};
-    let gssm = {};
-    let fim = {};
-    let antf = {};
-    let antr = {};
-    let aod = {};
-    let avs = {};
-    let mergedMbr = [];
-    let mergedAnt = [];
-    let data = [];
-    switch (selectedProcess){
-        case "mbr": 
-            mbrf = await queryMbrf(selectedMonth);
-            mbr = await queryMbr(selectedMonth);
-            data.push([...mbrf, ...mbr]);
-            break;
-        case "arp":
-            arp = await queryArp(selectedMonth);
-            data.push(arp);
-            break;
-        case "gssm":
-            gssm = await queryGssm(selectedMonth);
-            data.push(gssm);
-            break;
-        case "fim":
-            fim = await queryFim(selectedMonth);
-            data.push(fim);
-            break;
-        case "ant": 
-            antf = await queryAntF(selectedMonth);
-            antr = await queryAntR(selectedMonth);
-            data.push([...antf, ...antr]);
-            break;
-        case "aod":
-            aod = await queryAod(selectedMonth);
-            data.push(aod);
-            break;
-        case "avs":
-            avs = await queryAvs(selectedMonth);
-            data.push(avs);
-            break;
-        default:
-            mbrf = await queryMbrf(selectedMonth);
-            mbr = await queryMbr(selectedMonth);
-            arp = await queryArp(selectedMonth);
-            gssm = await queryGssm(selectedMonth);
-            fim = await queryFim(selectedMonth);
-            antf = await queryAntF(selectedMonth);
-            antr = await queryAntR(selectedMonth);
-            aod = await queryAod(selectedMonth);
-            avs = await queryAvs(selectedMonth);
-            mergedMbr = [...mbrf, ...mbr];
-            mergedAnt = [...antf, ...antr];
-            data = [mergedMbr, arp, gssm, fim, mergedAnt, aod, avs];
+    const {selectedMonth} = req.body;
+    console.log("Received month:", selectedMonth);
+    let mbrf = await queryMbrf(selectedMonth);
+    let mbr = await queryMbr(selectedMonth);
+    let arp = await queryArp(selectedMonth);
+    let gssm = await queryGssm(selectedMonth);
+    let fim = await queryFim(selectedMonth);
+    let antf = await queryAntF(selectedMonth);
+    let antr = await queryAntR(selectedMonth);
+    let aod = await queryAod(selectedMonth);
+    let avs = await queryAvs(selectedMonth);
+    let alu = await queryAlu(selectedMonth);
+    let mergedMbr = [...mbrf, ...mbr];
+    let mergedAnt = [...antf, ...antr];
+    let data = {
+        "mbr": mergedMbr,
+        "arp": arp,
+        "gssm": gssm,
+        "fim": fim,
+        "ant": mergedAnt,
+        "aod": aod,
+        "avs": avs,
+        "alu": alu
     }
 
     res.json({ success: true, data: data });
@@ -2461,63 +2688,35 @@ router.post("/data", async (req, res) => {
 // ---------------- report ----------------
 router.post("/data_report", async (req, res) => {
   try {
-    const {selectedMonth, selectedProcess, tab} = req.body;
-    console.log("Received month:", selectedMonth, "Received process:", selectedProcess);
-    let mbr = {};
-    let arp = {};
-    let gssm = {};
-    let fim = {};
-    let ant = {};
-    let aod = {};
-    let avs = {};
-    let data = [];
-    let dataSum = [];
-    switch (selectedProcess){
-        case "mbr": 
-            mbr = await queryMbrReport(selectedMonth);
-            data = [mbr]
-            dataSum = [...mbr];
-            break;
-        case "arp":
-            arp = await queryArpReport(selectedMonth);
-            data = [arp]
-            dataSum = [...arp];
-            break;
-        case "gssm":
-            gssm = await queryGssmReport(selectedMonth);
-            data = [gssm]
-            dataSum = [...gssm];
-            break;
-        case "fim":
-            fim = await queryFimReport(selectedMonth);
-            data = [fim]
-            dataSum = [...fim];
-            break;
-        case "ant": 
-            ant = await queryAntReport(selectedMonth);
-            data = [ant]
-            dataSum = [...ant];
-            break;
-        case "aod":
-            aod = await queryAodReport(selectedMonth);
-            data = [aod]
-            dataSum = [...aod];
-            break;
-        case "avs":
-            avs = await queryAvsReport(selectedMonth);
-            data = [avs]
-            dataSum = [...avs];
-            break;
-        default:
-            mbr = await queryMbrReport(selectedMonth);
-            arp = await queryArpReport(selectedMonth);
-            gssm = await queryGssmReport(selectedMonth);
-            fim = await queryFimReport(selectedMonth);
-            ant = await queryAntReport(selectedMonth);
-            aod = await queryAodReport(selectedMonth);
-            avs = await queryAvsReport(selectedMonth);
-            data = [mbr, arp, gssm, fim, ant, aod, avs]
-            dataSum = [...mbr, ...arp, ...gssm, ...fim, ...ant, ...aod, ...avs];
+    const {selectedMonth} = req.body;
+    console.log("Received month:", selectedMonth);
+    let mbr = await queryMbrReport(selectedMonth);
+    let arp = await queryArpReport(selectedMonth);
+    let gssm = await queryGssmReport(selectedMonth);
+    let fim = await queryFimReport(selectedMonth);
+    let ant = await queryAntReport(selectedMonth);
+    let aod = await queryAodReport(selectedMonth);
+    let avs = await queryAvsReport(selectedMonth);
+    let alu = await queryAluReport(selectedMonth);
+    let data = {
+        "mbr": mbr,
+        "arp": arp,
+        "gssm": gssm,
+        "fim": fim,
+        "ant": ant,
+        "aod": aod,
+        "avs": avs,
+        "alu": alu
+    }
+    let dataSum = {
+        "mbr": mbr.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "arp": arp.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "gssm": gssm.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "fim": fim.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "ant": ant.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "aod": aod.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "avs": avs.filter((item) => isNaN(item.mc_no.slice(-1))),
+        "alu": alu.filter((item) => isNaN(item.mc_no.slice(-1)))
     }
 
     res.json({ success: true, data: data, dataSum: dataSum });
