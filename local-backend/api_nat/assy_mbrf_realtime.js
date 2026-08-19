@@ -4,7 +4,7 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const { getStore } = require("./_store_assy");
+const { getStore } = require("./_store_assy_status");
 
 const startTime = 6;
 const store = getStore("MBR_F");
@@ -30,7 +30,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
             b_unm: 0,
             match: 0,
             cycle_time: 0,
-            alarm: 'SIGNAL LOSE',
+            status: 'SIGNAL LOSE',
             target_ct: 0,
             target_utl: 0,
             target_yield: 0,

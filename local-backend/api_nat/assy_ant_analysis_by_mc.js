@@ -986,7 +986,8 @@ router.get("/production_hour_all_mc/:date", async (req, res) => {
             END AS yield,
             FORMAT(registered, 'HH:mm') AS cat_time
         FROM ${DATABASE_PROD}
-        WHERE FORMAT(IIF(DATEPART(HOUR, [registered]) < 6, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+        WHERE (FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}' 
+		    OR (FORMAT([registered], 'yyyy-MM-dd hh') = '${date} 06'))
         UNION
         SELECT [registered],
             convert(varchar, [registered], 8) AS TIME,
@@ -1002,7 +1003,8 @@ router.get("/production_hour_all_mc/:date", async (req, res) => {
             END AS yield,
             FORMAT(registered, 'HH:mm') AS cat_time
         FROM ${DATABASE_PROD}
-        WHERE FORMAT(IIF(DATEPART(HOUR, [registered]) < 6, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+        WHERE (FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}' 
+		    OR (FORMAT([registered], 'yyyy-MM-dd hh') = '${date} 06'))
       )
       SELECT
         *,
