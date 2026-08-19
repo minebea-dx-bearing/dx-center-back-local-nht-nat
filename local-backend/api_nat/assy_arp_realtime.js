@@ -4,7 +4,7 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const { getStore } = require("./_store_assy");
+const { getStore } = require("./_store_assy_status");
 
 const startTime = 6;
 const store = getStore("ARP");
@@ -23,7 +23,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
             daily_ok: 0,
             daily_ng: 0,
             cycle_t: 0,
-            alarm: 'SIGNAL LOSE',
+            status: 'SIGNAL LOSE',
             target_ct: 0,
             target_utl: 0,
             target_yield: 0,
@@ -34,7 +34,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   }
 
   return Object.values(currentMachineData).map((item) => {
-    const status_alarm = determineMachineStatus(item, item.alarm, item.occurred, "alarm");
+    const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
 
     let target = 0;
     if (item.target_special > 0) {
