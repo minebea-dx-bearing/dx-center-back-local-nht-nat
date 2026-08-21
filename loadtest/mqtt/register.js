@@ -69,7 +69,18 @@ const registerColumns = async (token, process_, columns) => {
     body: JSON.stringify(body),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`columns/batch failed for process=${process_}: ${res.status} ${text}`);
+  if (!res.ok) {
+    // Confirmed 2026-08-13: the API returns 400, not 409, for a column that's
+    // already registered — same shape as the pre-2026-08-10 device bug this
+    // mirrors. Re-running against an already-registered schema is the
+    // idempotent case this task exists to support, not a real failure; only
+    // an unrecognized error body stays fatal.
+    if (res.status === 400 && /already registered/i.test(text)) {
+      console.log(`[reg] columns process=${process_} n=${columns.length} -> ${res.status} (already registered, treated as success)`);
+      return;
+    }
+    throw new Error(`columns/batch failed for process=${process_}: ${res.status} ${text}`);
+  }
   console.log(`[reg] columns process=${process_} n=${columns.length} -> ${res.status}`);
 };
 

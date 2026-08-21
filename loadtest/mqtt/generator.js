@@ -15,13 +15,14 @@ const cluster = require("node:cluster");
 const fs = require("node:fs");
 const path = require("node:path");
 const mqtt = require("mqtt");
-const { deviceIds, topic, macFor } = require("./devices");
-const { shardFor } = require("./shard");
+const { allocate, PROCESSES, topic, macFor } = require("./devices");
+const { schemaFor } = require("./schemas");
 const { newMachineState, buildDataPayload } = require("./payload");
 const { STATUS_VALUES, ALARM_VALUES } = require("./values");
 
 const COUNT = Number(process.env.COUNT || 1000);
 const WORKERS = Number(process.env.WORKERS || 4);
+const SCHEMA_COLUMNS = Number(process.env.SCHEMA_COLUMNS || 40);
 const CONN_MODE = process.env.CONN_MODE || "per-device"; // "per-device" | "pooled"
 const POOL_SIZE = Number(process.env.POOL_SIZE || 20);
 const QOS = Number(process.env.QOS || 0);
@@ -56,7 +57,7 @@ if (cluster.isPrimary) {
   const targetPerSecond = COUNT / DATA_INTERVAL_S;
 
   log(
-    `[gen] run=${RUN_ID} startedAt=${new Date().toISOString()} count=${COUNT} data_interval_s=${DATA_INTERVAL_S} status_interval_s=${STATUS_INTERVAL_S} alarm_interval_s=${ALARM_INTERVAL_S} mqtt_interval_s=${MQTT_INTERVAL_S} workers=${WORKERS} conn_mode=${CONN_MODE} qos=${QOS} duration_s=${DURATION_S} target=${targetPerSecond}/s`
+    `[gen] run=${RUN_ID} startedAt=${new Date().toISOString()} count=${COUNT} data_interval_s=${DATA_INTERVAL_S} status_interval_s=${STATUS_INTERVAL_S} alarm_interval_s=${ALARM_INTERVAL_S} mqtt_interval_s=${MQTT_INTERVAL_S} workers=${WORKERS} conn_mode=${CONN_MODE} qos=${QOS} duration_s=${DURATION_S} target=${targetPerSecond}/s processes=${PROCESSES.join(",")} schema_columns=${SCHEMA_COLUMNS}`
   );
 
   for (let id = 0; id < WORKERS; id++) {
@@ -92,7 +93,21 @@ if (cluster.isPrimary) {
   }, REPORT_MS);
 } else {
   const workerId = Number(process.env.WORKER_ID);
-  const shard = shardFor(COUNT, WORKERS, workerId);
+  // (process, device) pairs in stable allocation order, sliced the same way
+  // ../shard.js splits a flat device list — contiguous, gap-free, overlap-free.
+  const allMachines = allocate(COUNT);
+  const base = Math.floor(allMachines.length / WORKERS);
+  const extra = allMachines.length % WORKERS;
+  const shardStart = workerId * base + Math.min(workerId, extra);
+  const shardSize = base + (workerId < extra ? 1 : 0);
+  const shard = allMachines.slice(shardStart, shardStart + shardSize);
+  // One schema lookup per process, not per machine — schemaFor("tn") builds
+  // (and re-validates) the same 39-column list on every call otherwise.
+  const schemaCache = new Map();
+  const schemaForProcess = (p) => {
+    if (!schemaCache.has(p)) schemaCache.set(p, schemaFor(p, SCHEMA_COLUMNS));
+    return schemaCache.get(p);
+  };
 
   let published = 0;
   let stopping = false;
@@ -108,14 +123,14 @@ if (cluster.isPrimary) {
     published++;
   };
 
-  const connectStaggered = async (devices) => {
+  const connectStaggered = async (pairs) => {
     // 1000 simultaneous CONNECTs is a thundering herd that tests connection
     // handling, not steady-state throughput — spread them across a few seconds.
-    const spreadMs = Math.min(5000, devices.length * 5);
+    const spreadMs = Math.min(5000, pairs.length * 5);
     const ready = [];
-    for (let i = 0; i < devices.length; i++) {
-      const device = devices[i];
-      await new Promise((r) => setTimeout(r, spreadMs / devices.length));
+    for (let i = 0; i < pairs.length; i++) {
+      const { device } = pairs[i];
+      await new Promise((r) => setTimeout(r, spreadMs / pairs.length));
 
       const client = mqtt.connect(MQTT_URL, { clientId: device });
       clients.set(device, client);
@@ -157,11 +172,12 @@ if (cluster.isPrimary) {
   // interval and a 300s status/alarm/mqtt interval.
   const phase = (i, intervalMs) => Math.round((i / Math.max(1, shard.length)) * intervalMs);
 
-  const machines = shard.map((device, i) => {
+  const machines = shard.map(({ process: proc, device }, i) => {
     const now = Date.now();
     return {
+      process: proc,
       device,
-      state: newMachineState(device, Number(process.env.RUN_ID_SEED || 1) + i),
+      state: newMachineState(proc, device, Number(process.env.RUN_ID_SEED || 1) + i, schemaForProcess(proc)),
       seq: 0,
       status: "run",
       nextDataAt: now + phase(i, dataIntervalMs),
@@ -212,27 +228,32 @@ if (cluster.isPrimary) {
           m.nextDataAt += dataIntervalMs;
           m.seq++;
           const marker = `${RUN_ID}-${m.device}-${m.seq}`;
-          publish(client, topic("data", m.device), buildDataPayload(m.state, marker), QOS);
+          publish(client, topic("data", m.process, m.device), buildDataPayload(m.state, marker), QOS);
         }
         if (now >= m.nextDataAt) m.nextDataAt = now + dataIntervalMs;
 
         for (let fired = 0; now >= m.nextStatusAt && fired < maxCatchupStatus; fired++) {
           m.nextStatusAt += statusIntervalMs;
           m.status = STATUS_VALUES[Math.floor(m.state.rnd() * STATUS_VALUES.length)];
-          publish(client, topic("status", m.device), { status: m.status }, QOS);
+          publish(client, topic("status", m.process, m.device), { status: m.status }, QOS);
         }
         if (now >= m.nextStatusAt) m.nextStatusAt = now + statusIntervalMs;
 
         for (let fired = 0; now >= m.nextAlarmAt && fired < maxCatchupAlarm; fired++) {
           m.nextAlarmAt += alarmIntervalMs;
           const alarm = ALARM_VALUES[Math.floor(m.state.rnd() * ALARM_VALUES.length)];
-          publish(client, topic("alarm", m.device), { status: alarm }, QOS);
+          publish(client, topic("alarm", m.process, m.device), { status: alarm }, QOS);
         }
         if (now >= m.nextAlarmAt) m.nextAlarmAt = now + alarmIntervalMs;
 
         for (let fired = 0; now >= m.nextMqttAt && fired < maxCatchupMqtt; fired++) {
           m.nextMqttAt += mqttIntervalMs;
-          publish(client, topic("mqtt", m.device), { mac_id: macFor(m.device), broker: 1, modbus: 1, version: "2.1.0" }, QOS);
+          publish(
+            client,
+            topic("mqtt", m.process, m.device),
+            { mac_id: macFor(m.device), broker: 1, modbus: 1, version: "2.1.0" },
+            QOS
+          );
         }
         if (now >= m.nextMqttAt) m.nextMqttAt = now + mqttIntervalMs;
       }

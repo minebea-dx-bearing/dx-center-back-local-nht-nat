@@ -131,8 +131,13 @@ concurrency 8).
   `data.token` / `data.access_token` are all accepted, and failure prints the
   whole body rather than dying on `undefined`.
 
-**Unverified against the live API** until first run: the token envelope, and
-whether `/columns/batch` is idempotent for an already-registered column.
+**Verified against the live API, 2026-08-13:** the token envelope worked as
+implemented. `/columns/batch` is **not** idempotent — a duplicate column
+returns `400` with `"already registered"` in the body, same shape as the
+pre-2026-08-10 device-registration bug. Fixed the same way: `registerColumns`
+now treats a `400` matching `/already registered/i` as success rather than
+fatal, so re-running against an already-registered process is genuinely
+idempotent as the task requires.
 
 ## Task 4: Schema-driven payload builder — TODO
 
@@ -152,7 +157,7 @@ rather than the hardcoded `tn` field list.
   incomparable. Pin this with a test that builds a payload from a fixed seed
   and asserts the exact key set and the counter-monotonicity property.
 
-## Task 5: Generator sharding over (process, device) pairs — TODO
+## Task 5: Generator sharding over (process, device) pairs — DONE
 
 `loadtest/mqtt/generator.js`.
 
@@ -167,7 +172,7 @@ rather than the hardcoded `tn` field list.
 - `status` and `alarm` values stay process-independent: they are published on
   their own topics, not `data` columns, so multi-schema does not touch them.
 
-## Task 6: Generator capacity re-check before trusting any result — TODO
+## Task 6: Generator capacity re-check before trusting any result — DONE
 
 Same discipline as Task 8 of the Phase B plan. Building N schemas and N state
 objects per machine is more generator-side work than the single-schema version;
@@ -175,6 +180,16 @@ confirm the generator can still sustain the target rate at 1000 machines across
 10 processes **before** attributing any shortfall to the server. If `achieved/s`
 falls below target, the harness is the bottleneck and every run below is
 invalid.
+
+**Verdict (2026-08-13, `RUN_ID=cap-mp-p10`):** `COUNT=1000`,
+`PROCESSES=tn,lt1..lt9`, `SCHEMA_COLUMNS=40`, default `WORKERS=4`/
+`CONN_MODE=per-device`, 60s. `t=10s` read 929/s (connect ramp-up, same
+pattern as `capacity.md`'s single-schema 1000-machine run); `t=20s`
+onward held 1009–1011/s against target=1000/s. `rssMB` flat at 48–49,
+identical to the single-schema baseline. **No generator-side ceiling at
+1000 machines across 10 processes** — building 10 schemas/state objects
+per worker did not cost measurable throughput or memory. Task 7's sweep
+is cleared to proceed.
 
 ## Task 7: The sweep — TODO
 
