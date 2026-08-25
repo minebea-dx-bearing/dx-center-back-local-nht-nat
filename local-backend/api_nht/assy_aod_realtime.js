@@ -28,8 +28,8 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     }
     const target_ct = item.target_ct || 0;
 
-    const act_pd = item.daily_ok || 0;
-    const ng_pd = item.daily_ag || 0;
+    const act_pd = item.ok1 + item.ok2 || 0;
+    const ng_pd = item.ag + item.ng + item.mix || 0;
     const cycle_t = item.cycle_t / 100 || 0;
 
     const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
