@@ -4,7 +4,12 @@
 
 **Goal:** Ship a working NHT Assembly Combine realtime page at `/nht/assy-combine-realtime`, showing MBR → GSSM → FIM → ANT per line for both MA and MD machine families.
 
-**Architecture:** The BE aggregator (`api_nht/assy_combine_realtime.js`) and the FE page (`nhtNew/assy/NhtMbrCombineRealtime.jsx`) **both already exist** and are already MA/MD-aware with ARP/AOD/AVS/ALU already excluded. This is not a greenfield build — it is a repair-and-finish job. The dominant blocker is that `api_nht/assy_ant_realtime.js` is a half-finished copy of the NAT version that throws a `ReferenceError` on every call, which 500s the combine endpoint and blanks the standalone ANT page too.
+**Architecture:** The BE aggregator (`api_nht/assy_combine_realtime.js`) and the FE page (`nhtNew/assy/NhtMbrCombineRealtime.jsx`) **both already exist** and are already MA/MD-aware with ARP/AOD/AVS/ALU already excluded. This is not a greenfield build — it is a repair-and-finish job, centred on `api_nht/assy_ant_realtime.js`.
+
+**Revisions:**
+
+- *2026-08-25 (initial)* — ANT threw a `ReferenceError` on every call, 500ing the combine endpoint and blanking the standalone ANT page.
+- *2026-08-25 (rev 2)* — ANT was rewritten by hand against the AOD template. The crash and the `f_`/`s_` prefixes are gone, but AOD is the one file in `api_nht` whose field names match neither `SUMMARY_FIELDS` nor `DefaultCard`. Task 1 is rewritten as a remediation; **Task 0 added** to settle ANT's raw column names, which blocks both Task 1 and the spindle-scaling decision.
 
 **Tech Stack:** Express 4 (CommonJS), moment, MQTT-backed process stores; React 19 + Vite + Tailwind, axios, sweetalert2, React Router.
 
@@ -42,6 +47,8 @@ Read this before touching anything — several of these contradict the obvious a
 
 ## DECISION NEEDED BEFORE TASK 1
 
+> **Blocked on Task 0.** The two questions below both hinge on whether ANT's production columns are per-spindle or already combined. Run Task 0 first, then answer.
+
 ANT is dual-spindle. Collapsing to a single bare `act_pd` means `act_pd = ok_front + ok_rear` — roughly **double** a single spindle's output. But `target` is computed from a single-spindle formula:
 
 ```js
@@ -62,7 +69,7 @@ If both stay single-spindle while `act_pd` is summed, ANT will report ~**+100% u
 - **(B) Leave target single-spindle** — accept that ANT shows ~200% achievement. Wrong, but matches whatever the plant may already be reading elsewhere.
 - **(C) Store the doubled target in the master table** — no code change to the formula; `target_special` or `ring_factor` absorbs the factor of 2. Cleanest long-term, needs a DB change and is out of scope here.
 
-> **Decision:** _(fill in before Task 1)_
+> **Decision:** *(fill in before Task 1)*
 
 Tasks below are written for **(A)**. If (B) or (C) is chosen, drop the `SPINDLE_COUNT` multiplications from Task 1 Step 2.
 
@@ -76,30 +83,109 @@ The backend must be running for verification: `cd local-backend && npm start`.
 
 ---
 
-## Task 1: Fix and de-prefix `assy_ant_realtime.js`
+## Task 0: Establish ANT's real column names
 
-This is the blocker. Until it lands, `/nht/assy/combine-realtime` and `/nht/assy/ant-realtime/machines` both return 500.
+**Status: BLOCKING.** Two ambiguities cannot be resolved from code and must be settled against live data before Task 1.
 
-**Files:**
-- Modify: `local-backend/api_nht/assy_ant_realtime.js` (full rewrite of `prepareRealtimeData` + the router options)
+The original ANT file referenced **two overlapping column sets**: `ok_front / ok_rear / ag_front / ng_front / mixball_front / ag_rear / ng_rear / mixball_rear / cycle_time_front / cycle_time_rear`, *and* `ok1 / ok2 / ag / ng / mix / cycle`. It drove `act_pd` from the per-spindle set and computed the second set into `prod_ok` / `prod_ng`, which were returned but never consumed. So both may exist, and which is authoritative for ANT is unknown. `ok1`/`ok2` could be front/rear, or two OK grades.
 
-### Step 1: Confirm the endpoint is currently broken
+### Step 1: Dump the raw snapshot keys
 
-Run:
+From `local-backend/`:
 ```bash
-curl -s http://localhost:3001/nht/assy/ant-realtime/machines | head -c 300
+node -e "require('dotenv').config();const s=require('./api_nht/_store_ant');setTimeout(()=>{const m=Object.values(s.getRawMap())[0];console.log(Object.keys(m).sort().join('\n'))},8000)"
 ```
 
-Expected: `{"success":false,"message":"Internal Server Error"}`
+The 8s delay lets the MQTT snapshot populate. If the output is empty, the broker (`NHT_MQTT_ASSY_BACK`) isn't reachable — check `.env` before proceeding.
 
-Check the server console — you should see `ReferenceError: act_ct is not defined`. This confirms you are fixing a real fault, not a phantom. The three faults are:
-- `assy_ant_realtime.js:56` — `const diff_ct = Number((act_ct - s_target_ct)...)`, `act_ct` never declared
-- `assy_ant_realtime.js:119-121` — returns `s_act_ct: act_ct`, `s_diff_ct: diff_ct`, `s_curr_yield: curr_yield`, none declared
-- `assy_ant_realtime.js:66-67` — `s_diff_pd` is computed from `f_act_pd` and `f_diff_pd` from `s_act_pd`; the two are swapped
+### Step 2: Record the answers here
 
-### Step 2: Replace `prepareRealtimeData` in full
+- **Production:** does `ok1`/`ok2` exist, and does `ok1 + ok2` equal `ok_front + ok_rear`? → *(fill in)*
+- **Cycle time:** does `cycle_t` exist, or only `cycle_time_front` / `cycle_time_rear` / `cycle`? → *(fill in)*
+- **Status:** confirm there is **no** bare `status` / `occurred` key (expected — the master query at [`util/mqtt_master_mc_no_front_rear.js:61-64`](../../local-backend/util/mqtt_master_mc_no_front_rear.js) selects only `alarm_front / occurred_front / alarm_rear / occurred_rear`). → *(fill in)*
 
-Replace lines 11–128 of `local-backend/api_nht/assy_ant_realtime.js` with:
+### Step 3: Answer the SPINDLE_COUNT decision above
+
+If production columns are already spindle-combined, options (A)/(B)/(C) collapse — no scaling is needed. If they are per-spindle, the decision stands as written.
+
+---
+
+## Task 1: Finish `assy_ant_realtime.js`
+
+**Status: partially done (2026-08-25, by the requester).** The file was rewritten by hand using [`assy_aod_realtime.js`](../../local-backend/api_nht/assy_aod_realtime.js) as the template.
+
+**Landed already:**
+
+- The three `ReferenceError`s are gone (`act_ct` / `diff_ct` / `curr_yield` were used undeclared at old lines 56 and 119–121)
+- The swapped `s_diff_pd` / `f_diff_pd` at old lines 66–67 is gone
+- `f_`/`s_` prefixes removed
+- `summary` switched from `"fSpindle"` to `"standard"`
+- A `//TODO` at line 10 marks the file as unfinished — remove it when this task closes
+
+**Still broken.** AOD was the wrong template — it is the one file in `api_nht` whose field names match neither `SUMMARY_FIELDS` nor `DefaultCard`, which is why it carries a hand-rolled route handler instead of `makeMachinesHandler`. **FIM is the correct template.** Three defects remain:
+
+**Files:**
+
+- Modify: `local-backend/api_nht/assy_ant_realtime.js`
+
+### Step 1: Rename the output fields to match `standard`
+
+`summary: "standard"` resolves to `target_pd / act_pd / act_ct / curr_utl / oee` ([`util/realtimeMachinesRoute.js:25`](../../local-backend/util/realtimeMachinesRoute.js)). The current AOD-derived names miss four of the five, so `resultSummary` returns `sum_target: 0`, `avg_cycle_t: 0`, `avg_utl: 0`. `DefaultCard` misses the same fields and renders the CT row, yield bar and utilisation blank.
+
+| Current (AOD) | Required (FIM) |
+|---|---|
+| `target_actual` | `target_pd` |
+| `diff_prod` | `diff_pd` |
+| `cycle_t` | `act_ct` |
+| `yield_rate` | `curr_yield` |
+| *(absent)* | `curr_utl` |
+| *(absent)* | `target_utl` |
+| *(absent)* | `target_yield` |
+
+### Step 2: Restore per-spindle status
+
+Line 16 currently reads:
+```js
+const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
+```
+
+`item.status` and `item.occurred` do not exist on ANT — the master query supplies only `alarm_front / occurred_front / alarm_rear / occurred_rear`. Both arguments arrive `undefined`, so `determineMachineStatus` skips its SQL fallback and its `occurredStatus === null` branch (`undefined !== null`), leaving only the MQTT path. Status degenerates to **RUNNING or STOP** and can never report a spindle alarm or `NO DATA RUN`.
+
+Replace with:
+```js
+    const status_front = determineMachineStatus(item, item.alarm_front, item.occurred_front, "status");
+    const status_rear = determineMachineStatus(item, item.alarm_rear, item.occurred_rear, "status");
+    // A line only genuinely runs when both spindles do; otherwise surface the faulted one.
+    const status_alarm = status_front === "RUNNING" ? status_rear : status_front;
+```
+
+Return all three. `status_front` / `status_rear` are needed by the combine page's flow bar in Task 3 Step 4.
+
+### Step 3: Split the running-time lookup by spindle
+
+Line 18 is a bare `.find()` on `mc_no`. ANT's running-time rows are grouped by `alarm_base` — `"RUN FRONT" / "RUN REAR" / "PLAN STOP" / "SETUP"` ([`_store_ant.js:5`](../../local-backend/api_nht/_store_ant.js), SQL mode `withPlanStopAnt`). The bare find returns whichever row sorts first, i.e. one spindle, so `availability`, `performance`, `oee` and `opn` all come out roughly half.
+
+Replace with:
+```js
+    const runFront = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN FRONT") || {};
+    const runRear = runningTimeData.find((rt) => rt.mc_no === item.mc_no && rt.alarm_base === "RUN REAR") || {};
+
+    const sum_run = (runFront.sum_duration || 0) + (runRear.sum_duration || 0);
+    const total_time = (runFront.total_time || 0) + (runRear.total_time || 0);
+    const plan_shutdown = (runFront.sum_planshutdown_duration || 0) + (runRear.sum_planshutdown_duration || 0);
+```
+
+Summing both spindles keeps `availability` correct as a ratio and makes the `performance` denominator consistent with a two-spindle `act_pd`.
+
+### Step 4: Apply the Task 0 findings and the SPINDLE_COUNT decision
+
+Set the production and cycle-time source columns per Task 0 Step 2, and apply the scaling decision to `target` and `denom_utl`.
+
+Also delete the stale `// f_ -> Rear, s_ -> Front` comment at line 14 and the `//TODO` at line 10.
+
+### Reference implementation
+
+If a full replacement is preferred over patching, this is the finished shape — written for **(A)** and for per-spindle production columns. Adjust the source columns and drop `SPINDLE_COUNT` per Task 0.
 
 ```js
 const SPINDLE_COUNT = 2; // ANT runs front + rear; act_pd sums both, so targets scale to match
@@ -192,23 +278,9 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 };
 ```
 
-`status_front` / `status_rear` are kept alongside `status_alarm` because the FE flow-bar (Task 4) needs both spindles independently. Everything else is bare, matching FIM.
+`status_front` / `status_rear` are kept alongside `status_alarm` because the combine page's flow bar (Task 3 Step 4) needs both spindles independently. Everything else is bare, matching FIM.
 
-### Step 3: Switch the summary to `standard`
-
-In the `router.get("/machines", ...)` call at the bottom of the file, change:
-
-```js
-    summary: "fSpindle",
-```
-to:
-```js
-    summary: "standard",
-```
-
-`fSpindle` maps to `f_target_pd / s_act_pd / s_act_ct / s_curr_utl / f_oee` ([`util/realtimeMachinesRoute.js:26`](../../local-backend/util/realtimeMachinesRoute.js)), all of which no longer exist. `standard` maps to `target_pd / act_pd / act_ct / curr_utl / oee`.
-
-### Step 4: Verify the endpoint recovers
+### Step 5: Verify the endpoint returns real numbers
 
 Run:
 ```bash
@@ -217,19 +289,24 @@ curl -s http://localhost:3001/nht/assy/ant-realtime/machines \
 ```
 
 Expected:
+
 - `ok: true`
-- The sample record has `act_pd`, `act_ct`, `status_alarm` and **no** `s_`/`f_`-prefixed production fields
-- `resultSummary` has non-zero `sum_target` and `sum_daily`
+- The sample record carries `target_pd`, `act_pd`, `act_ct`, `diff_pd`, `curr_yield`, `curr_utl`, `target_utl`, `status_alarm` — and **no** `target_actual` / `diff_prod` / `cycle_t` / `yield_rate`
+- `resultSummary` has non-zero `sum_target`, `sum_daily`, `avg_cycle_t` **and** `avg_utl`
 
-**Sanity check the SPINDLE_COUNT decision here:** `curr_utl` should land in a believable band (roughly 60–110%), not ~200%. If it reads ~200%, `SPINDLE_COUNT` is being applied to `act_pd` but not the denominators — re-read Step 2.
+`avg_utl` and `avg_cycle_t` are the tell for Step 1: while the AOD-derived names are in place they read exactly `0`, because `summarize()` looks up keys the payload doesn't have.
 
-### Step 5: Confirm the standalone ANT page now renders
+**Sanity-check the spindle decision here:** `curr_utl` should land in a believable band (roughly 60–110%), not ~200%. A reading near 200% means `act_pd` spans both spindles while the denominators are still single-spindle — revisit Task 0 Step 3.
+
+**Sanity-check the status fix:** across the fleet, `status_alarm` should show more than just `RUNNING` / `STOP`. If those are the only two values appearing, Step 2 hasn't taken effect.
+
+### Step 6: Confirm the standalone ANT page now renders
 
 Open `http://localhost:5173/nht/assy-ant-realtime`. Cards should show numbers instead of blanks.
 
 This page was already broken before this plan: [`MasterRtPage.jsx:42`](../../../dx-center-front/src/components/redesign/realtime/MasterRtPage.jsx) has `doubleData = ["MBR", "GSSM"]` — ANT is not in it, so ANT has always been routed to `DefaultCard`, which reads bare fields the BE never sent. Task 1 fixes that as a side effect. Do not add ANT to `doubleData`.
 
-### Step 6: Lint and commit
+### Step 7: Lint and commit
 
 ```bash
 cd local-backend && npm run build 2>/dev/null || echo "no build script — skip"
