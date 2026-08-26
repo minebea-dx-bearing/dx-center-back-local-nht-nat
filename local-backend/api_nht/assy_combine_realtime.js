@@ -9,6 +9,7 @@ const { queryCurrentRunningTime: currentANT, getMachineData: machineDataANT, pre
 const { queryCurrentRunningTime: currentALU, getMachineData: machineDataALU, prepareRealtimeData: prepareALU } = require("./assy_alu_realtime");
 const router = express.Router();
 
+//* wait for master mapping each line[list machine name for each line]
 router.get("/", async (req, res) => {
   // One shared instant so every process computes the same shift window.
   const now = moment();
