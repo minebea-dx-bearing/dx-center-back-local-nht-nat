@@ -1,23 +1,34 @@
 const express = require("express");
+const moment = require("moment");
 
 const { queryCurrentRunningTime: currentMBRF, getMachineData: machineDataMBRF, prepareRealtimeData: prepareMBRF } = require("./assy_mbrf_realtime");
 const { queryCurrentRunningTime: currentMBR, getMachineData: machineDataMBR, prepareRealtimeData: prepareMBR } = require("./assy_mbr_realtime");
 const { queryCurrentRunningTime: currentGSSM, getMachineData: machineDataGSSM, prepareRealtimeData: prepareGSSM } = require("./assy_gssm_realtime");
 const { queryCurrentRunningTime: currentFIM, getMachineData: machineDataFIM, prepareRealtimeData: prepareFIM } = require("./assy_fim_realtime");
 const { queryCurrentRunningTime: currentANT, getMachineData: machineDataANT, prepareRealtimeData: prepareANT } = require("./assy_ant_realtime");
+const { queryCurrentRunningTime: currentALU, getMachineData: machineDataALU, prepareRealtimeData: prepareALU } = require("./assy_alu_realtime");
 const router = express.Router();
 
 router.get("/", async (req, res) => {
-  const dataMBRF = prepareMBRF(machineDataMBRF(), await currentMBRF());
-  const dataMBR = prepareMBR(machineDataMBR(), await currentMBR());
-  const dataGSSM = prepareGSSM(machineDataGSSM(), await currentGSSM());
-  const dataFIM = prepareFIM(machineDataFIM(), await currentFIM());
-  const dataANT = prepareANT(machineDataANT(), await currentANT());
+  // One shared instant so every process computes the same shift window.
+  const now = moment();
+  const [runMBRF, runMBR, runGSSM, runFIM, runANT, runALU] = await Promise.all([
+    currentMBRF(),
+    currentMBR(),
+    currentGSSM(),
+    currentFIM(),
+    currentANT(),
+    currentALU(),
+  ]);
 
+  const dataMBRF = prepareMBRF(machineDataMBRF(), runMBRF, now);
+  const dataMBR = prepareMBR(machineDataMBR(), runMBR, now);
+  const dataGSSM = prepareGSSM(machineDataGSSM(), runGSSM, now);
+  const dataFIM = prepareFIM(machineDataFIM(), runFIM, now);
+  const dataANT = prepareANT(machineDataANT(), runANT, now);
+  const dataALU = prepareALU(machineDataALU(), runALU, now);
 
-  const combinedData = [...dataMBR, ...dataMBRF, ...dataGSSM, ...dataFIM, ...dataANT].map((item) => {
-    // console.log("dataANT", ...dataANT);
-    
+  const combinedData = [...dataMBR, ...dataMBRF, ...dataGSSM, ...dataFIM, ...dataANT, ...dataALU].map((item) => {
     const type = item.mc_no.includes("MA") ? "MA" : "MD";
     const machineNumber = parseInt(item.mc_no.slice(-2));
 
