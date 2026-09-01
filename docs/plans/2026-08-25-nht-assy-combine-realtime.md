@@ -2,9 +2,9 @@
 
 > **For Claude:** Use `skills/collaboration/executing-plans` to implement this plan task-by-task.
 
-**Goal:** Ship a working NHT Assembly Combine realtime page at `/nht/assy-combine-realtime`, showing MBR → GSSM → FIM → ANT per line for both MA and MD machine families.
+**Goal:** Ship a working NHT Assembly Combine realtime page at `/nht/assy-combine-realtime`, showing MBR → GSSM → FIM → ANT **one row per production line**, driven by the `master_data` line master.
 
-**Architecture:** The BE aggregator (`api_nht/assy_combine_realtime.js`) and the FE page (`nhtNew/assy/NhtMbrCombineRealtime.jsx`) **both already exist** and are already MA/MD-aware with ARP/AOD/AVS/ALU already excluded. This is not a greenfield build — it is a repair-and-finish job, centred on `api_nht/assy_ant_realtime.js`.
+**Architecture:** The BE aggregator (`api_nht/assy_combine_realtime.js`) and the FE page (`nhtNew/assy/NhtMbrCombineRealtime.jsx`) both already existed. Tasks 1–2 were a repair job on `assy_ant_realtime.js` and the ALU fan-out. **Task 2.5 (rev 5) then re-shaped the response entirely** — from `data[TYPE][pair][PROCESS-HALF]` to a flat array of lines — which makes the FE a rewrite rather than a rename pass.
 
 **Revisions:**
 
@@ -16,6 +16,10 @@
   - **Spindle scaling resolved as 1.** Measured `curr_utl ≈ 91%` off the live payload. No `SPINDLE_COUNT` constant is introduced.
   - **The reference implementation's `item.cycle_t` was wrong** — the raw column is `item.cycle`. `cycle_t` is the AOD *output* name, not an input.
   - Knock-on: **Task 3 Step 4** can no longer read `status_front` / `status_rear`. Rewritten to gate on `status_alarm`.
+- *2026-09-01 (rev 5)* — **Response re-shaped by request.** The pair-line structure is retired. Line membership now comes from `master_data`, not from parsing `mc_no`.
+  - **New Task 2.5** (already implemented): `data` is a flat array of 76 lines, each `{ line_id, line_name, machines: { <process>: {...} } }`. No `MA` / `MD`, no `1&2` pairs, no `-FIRST` / `-SECOND` suffixes.
+  - **The old grouping was placing MD machines on the wrong lines.** `line_name` and `mc_no` numbering are decoupled — FL-52 holds `MBRMD01` / `WANTMD01` / `FIMMD01`, but `parseInt(mc_no.slice(-2))` filed those under line 1. Old-vs-new differences on the MD side are the fix, not a regression.
+  - **Tasks 3, 4 and 5 are superseded by Task 6**, a single FE rewrite. Their individual steps no longer apply against the new payload, but the substance (bare ANT field names, PACKING and TOTAL YIELD tiles, route enablement) carries over.
 
 **Tech Stack:** Express 4 (CommonJS), moment, MQTT-backed process stores; React 19 + Vite + Tailwind, axios, sweetalert2, React Router.
 
@@ -29,10 +33,12 @@ Read this before touching anything — several of these contradict the obvious a
 
 | Claim | Reality |
 |---|---|
-| BE combine endpoint needs writing | **Already exists**: [`api_nht/assy_combine_realtime.js`](../../local-backend/api_nht/assy_combine_realtime.js), mounted at `server.js:92`. ARP/AOD/AVS/ALU already absent. |
-| FE page needs writing from the NAT template | **Already exists**: `dx-center-front/src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx` (630 lines). Already fetches `/nht/assy/combine-realtime`, already splits `data.MA` / `data.MD` into two stacked sections, already renders MBR/GSSM/FIM/ANT only. |
-| ANT's process key is `ANT` | It is **`AN`**. `_store_ant.js:21` sets `dbProcess = "AN"`, and `prepareRealtimeData` returns `process: item.process.toUpperCase()`. The FE correctly reads `data["AN-FIRST"]`. |
-| NHT response shape matches NAT's | It does **not**. NAT is `data[groupKey][lineMaster]`; NHT is `data[TYPE][groupKey][lineMaster]` where TYPE ∈ `MA` \| `MD`. The FE already handles this. |
+| BE combine endpoint needs writing | **Already exists**: [`api_nht/assy_combine_realtime.js`](../../local-backend/api_nht/assy_combine_realtime.js), mounted at `server.js:93`. Rewritten in Task 2.5. |
+| FE page needs writing from the NAT template | **Exists but is now wrong**: `dx-center-front/src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx` (630 lines) is built entirely around `data.MA` / `data.MD` and `-FIRST` / `-SECOND`. After rev 5 none of those keys exist. Task 6 rewrites it. |
+| ANT's process key is `ANT` | It is **`AN`**. `_store_ant.js:21` sets `dbProcess = "AN"`, and `prepareRealtimeData` returns `process: item.process.toUpperCase()`. After rev 5 the FE reads `line.machines.AN`. |
+| ANT's `mc_no` is `ANTMA01` | It is **`WANTMA01`** — leading `W`. Both `master_data.assy_machine` and `[data_machine_an2].[dbo].[DATA_PRODUCTION_AN]` agree (the latter stores it lowercase, `wantma01`; the module uppercases it). A hand-typed sample in rev 4 dropped the `W` and briefly looked like a join mismatch. There is none. |
+| NHT response shape matches NAT's | It does **not**, and after rev 5 it matches nothing else either. NHT is now `data: [{ line_id, line_name, machines }]` — a flat array. NAT remains `data[groupKey][lineMaster]`. |
+| Line number can be derived from `mc_no` | **No.** `line_name` and `mc_no` numbering are decoupled: FL-52 holds `MBRMD01` / `WANTMD01` / `FIMMD01`. Membership must come from `assy_machine.line_id`. |
 | `yield_calc_total` is a real field | **In NAT, yes** — every module returns it (`assy_mbr_realtime.js:101`, `assy_ant_realtime.js:183`, GSSM/FIM/ALU/ARP/AOD/AVS alike), so NAT's TOTAL YIELD tile is correct. **In NHT, no module returns it.** Copying NAT's FE math unchanged yields `0.00`. |
 | NHT ANT should mirror NAT's ANT | Only in *output shape*. NAT splits one physical machine into two logical rows, one per spindle (`api_nat/assy_ant_realtime.js:27-43`), because NAT runs one ANT per **line pair**. NHT runs **one ANT per line, single spindle** — no split, no per-spindle status, no per-spindle running time. Same bare field names, ordinary single-machine derivation. |
 | ANT's store is dual-spindle | **No.** [`_store_ant.js:33,40`](../../local-backend/api_nht/_store_ant.js) uses `master_mc_no_status` and `buildRunningTimeSql({ mode: "withPlanStop", dataType: "status" })` — identical to every other NHT store. The file's own header comment (lines 4–9) still describes the old `master_mc_no_front_rear` + `withPlanStopAnt` arrangement and is **stale**. Verified against a live payload 2026-08-26: `status: "RUN"` and `occurred` are present; `alarm_front` / `alarm_rear` are not. |
@@ -48,6 +54,22 @@ Read this before touching anything — several of these contradict the obvious a
 | `FIM` | none (bare) | `status_alarm` | Reference shape — matches `standard` summary and `DefaultCard` |
 | `AN` | none (bare), but AOD-named today → **`standard`-named after Task 1** | `status_alarm` (already correct) | Single spindle |
 | `ALU` | none (bare) | `status_alarm` | Added in Task 2 for PACKING only, no card |
+
+### Line master (`master_data`, verified 2026-09-01)
+
+Source: `assy_machine` ⟕ `assy_machine_group` ⟕ `assy_line`, on `ms_instance_nht`. **76 lines, 376 machines.** Four line shapes:
+
+| Machines | Lines | `mg_code` set |
+|---|---|---|
+| 6 | 38 (FL-37…FL-74) | ALU, AN, AVS, FIM, GSSM, MBR |
+| 5 | 19 (FL-01…FL-32) | ALU, AN, AVS, GSSM, MBR |
+| 3 | 17 (FL-17…FL-36) | AN, GSSM, MBR |
+| 1 | 2 (Over Line 1, Over Line 2) | AN |
+
+- **FIM exists only on FL-37…FL-74.** Master holds `FIMMD01`–`FIMMD38` and nothing on the MA side.
+- **AVS is in master but is never fetched.** The route fans out six processes, not AVS, so it is absent from the payload with no explicit filter — a consequence of the "omit missing keys" rule, not a special case.
+- **`MBR_F` is not in master.** It shares `MBRMA01` with MBR (`assy_mbrf_realtime.js:57` strips the `_f`), so `mc_no` cannot distinguish the two. The route keys machines by the live record's `process`, never by `mg_code`.
+- **Data defect:** two `AN` rows carry a trailing CRLF (`WANTMD98\r\n`, `WANTMD99\r\n`, both on the Over Lines). The master loader strips `CHAR(13)`/`CHAR(10)` in SQL. Worth cleaning the rows at source.
 
 `DefaultCard` and the `standard` summary both read bare `act_pd / act_ct / diff_pd / diff_ct / curr_yield / curr_utl / target_pd / status_alarm`. **AOD is deliberately not the naming model** — it returns `target_actual / diff_prod / cycle_t / yield_rate`, which matches neither, which is why it has a hand-rolled handler instead of `makeMachinesHandler`. Follow FIM.
 
@@ -358,18 +380,9 @@ to:
   const combinedData = [...dataMBR, ...dataMBRF, ...dataGSSM, ...dataFIM, ...dataANT, ...dataALU].map((item) => {
 ```
 
-### Step 4: Verify ALU lands under the expected keys
+### Step 4: Verify ALU lands under the expected keys — SUPERSEDED by Task 2.5
 
-Run:
-```bash
-curl -s http://localhost:3001/nht/assy/combine-realtime \
-  | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);for(const t of Object.keys(j.data)){const g=Object.keys(j.data[t])[0];console.log(t,g,Object.keys(j.data[t][g]).sort().join(' '))}})"
-```
-
-Expected, for both `MA` and `MD`, keys drawn from:
-`ALU-FIRST ALU-SECOND AN-FIRST AN-SECOND FIM-FIRST FIM-SECOND GSSM-FIRST GSSM-SECOND MBR-FIRST MBR-SECOND MBR_F-FIRST MBR_F-SECOND`
-
-**If `ALU-FIRST`/`ALU-SECOND` are missing or land in the wrong line group, stop and report.** The lineMaster rules at `assy_combine_realtime.js:21-51` key off `mc_no.includes("MA")` and `parseInt(mc_no.slice(-2))`; ALU was assumed to follow the same convention but that has not been confirmed against live data. Do not paper over it with an ALU-specific branch without checking with the requester first.
+The original check asserted `ALU-FIRST` / `ALU-SECOND` keys under `MA` / `MD`. Those keys no longer exist. Verify ALU via Task 2.5's check instead: `ALU` should appear in `machines` for every line whose master shape includes it (the 5- and 6-machine lines, not the 17 three-machine lines).
 
 ### Step 5: Commit
 
@@ -380,212 +393,197 @@ git commit -m "feat(nht): add ALU to combine payload and share one shift-window 
 
 ---
 
-## Task 3: Point the ANT cards at the bare field names
+## Task 2.5: Reshape the combine response to one row per line — DONE
 
-The FE page reads ANT through `s_*` (verified 2026-08-26 at lines 212–224, 323–335, 483–495, 594–606). The NHT backend has **never** sent `s_`-prefixed ANT fields, so these cards have always rendered blank — this is not damage introduced by Task 1. Task 1 settles what the real names are; this task points the cards at them.
+**Implemented 2026-09-01.** Recorded here because it invalidates Tasks 3–5.
+
+Replaces `mc_no` string-parsing with the `master_data` line master. Requested outcome: no pair grouping, no `MA`/`MD` split, one entry per production line, and a line carries only the machines it actually has.
 
 **Files:**
-- Modify: `dx-center-front/src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx`
 
-### Step 1: Update the MA ANT card (around lines 204–226)
+- Add: `local-backend/api_nht/_master_assy_line.js`
+- Modify: `local-backend/api_nht/assy_combine_realtime.js`
 
-In the `CardProcess` for `data["AN-FIRST"]`, rename the seven reads:
+### Decisions taken
 
-| Before | After |
+| Question | Decision |
 |---|---|
-| `s_act_pd` | `act_pd` |
-| `s_diff_pd` | `diff_pd` |
-| `s_act_ct` | `act_ct` |
-| `s_diff_ct` | `diff_ct` |
-| `s_target_yield` | `target_yield` |
-| `s_curr_yield` | `curr_yield` |
-| `s_status_alarm` | `status_alarm` |
+| Container shape | **Array** ordered by `line_id`, so the FE just `.map()`s it |
+| Lines with no live data | **Kept**, with `machines: {}` — the line set comes from master so the layout is stable across restarts |
+| Machine with no live record | **Key omitted entirely** |
+| Over Line 1 / Over Line 2 | **Included** as ordinary lines (they hold real ANT machines) |
+| Master caching | 10-minute TTL via the existing `createRunningTimeCache`, joined into the route's `Promise.all` |
+| Live machine absent from master | Dropped, but logged once by `warnUnmapped` and re-logged only when the set changes |
 
-Also drop the `(FRONT)` suffix from `title` — NHT ANT is single-spindle, so the front/rear labelling is a NAT concept that never applied here:
-```jsx
-title={data["AN-FIRST"]?.mc_no || "N/A"}
+### Response shape
+
+```json
+{
+  "success": true,
+  "message": "NHT Assembly Combine Realtime API is working",
+  "data": [
+    { "line_id": 1,  "line_name": "FL-01", "machines": { "MBR": {…}, "MBR_F": {…}, "GSSM": {…}, "AN": {…}, "ALU": {…} } },
+    { "line_id": 2,  "line_name": "FL-02", "machines": {} },
+    { "line_id": 17, "line_name": "FL-17", "machines": { "MBR": {…}, "MBR_F": {…}, "GSSM": {…}, "AN": {…} } },
+    { "line_id": 52, "line_name": "FL-52", "machines": { "MBR": {…}, "MBR_F": {…}, "GSSM": {…}, "FIM": {…}, "AN": {…}, "ALU": {…} } },
+    { "line_id": 76, "line_name": "Over Line 2", "machines": { "AN": {…} } }
+  ]
+}
 ```
 
-### Step 2: Repeat for `AN-SECOND` (around lines 316–337)
+Each machine value is the unchanged `prepareRealtimeData` record — same fields as before, only the nesting changed.
 
-Same seven renames. Drop the `(REAR++)` suffix the same way — `AN-SECOND` is the **second ANT machine of the line pair**, not a rear spindle. (The MD block's copy reads `(REAR!!)`; both are placeholders left over from the NAT template.)
+### Verification
 
-### Step 3: Repeat for the MD section
+Exercised with the real master and stubbed live modules (no MQTT needed):
 
-The MD block (from line ~360) is a near-duplicate of MA. Apply the identical renames to its `AN-FIRST` (lines ~476–495) and `AN-SECOND` (lines ~587–606) cards.
-
-> Four near-identical ANT card blocks is the DRY smell flagged at the end of this plan. Do **not** refactor it as part of this task — get the page working first, then see Follow-ups.
-
-### Step 4: Fix the flow-bar spindle check
-
-At `NhtMbrCombineRealtime.jsx:340-352` the bar reads `s_status_alarm` and `f_status_alarm` off `AN-FIRST`. Neither ever existed on ANT — both were always `undefined`, so the bar could never be green.
-
-**Rewritten in rev 4.** The original version of this step replaced them with `status_front` / `status_rear`. Those fields do not exist either, and Task 1 no longer creates them — NHT ANT is single-spindle. Gate on the one real field:
-
-```jsx
-                  className={`w-3 h-full ${
-                    data["AN-FIRST"]?.status_alarm === "RUNNING"
-                      ? "animated-flow"
-                      : data["AN-FIRST"]?.status_alarm === undefined
-                      ? "bg-gray-300"
-                      : "bg-red-500"
-                  }`}
+```
+lines: 76
+FL-01        ["ALU","AN","GSSM","MBR","MBR_F"]
+FL-17        ["AN","GSSM","MBR","MBR_F"]
+FL-52        ["ALU","AN","FIM","GSSM","MBR","MBR_F"]
+Over Line 2  ["AN"]        <- CRLF master row joins correctly
+FL-02        []            <- no live data, line still present
+AVS anywhere? false
+FL-52.AN.mc_no = WANTMD01
 ```
 
-Apply to the MD section's equivalent block too.
-
-### Step 5: Verify
-
-Reload `/nht/assy-combine-realtime` (the route is still commented out — temporarily uncomment `App.jsx:241` to check, or wait for Task 5). ANT cards show numbers; the flow bar animates when both spindles run.
-
-### Step 6: Lint and commit
+Live check once the backend is up:
 
 ```bash
-cd dx-center-front && npm run lint:fix
-git add src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx
-git commit -m "fix(nht): read ANT combine cards from bare field names"
+curl -s http://localhost:3001/nht/assy/combine-realtime \
+  | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log('lines:',j.data.length);for(const l of j.data.slice(0,5))console.log(l.line_name,Object.keys(l.machines).sort().join(' '))})"
 ```
 
 ---
 
-## Task 4: Add PACKING and TOTAL YIELD tiles to the line header
+## Tasks 3, 4, 5 — SUPERSEDED by Task 6
 
-The line header currently renders only `LINE : n` (`NhtMbrCombineRealtime.jsx:100-113` and its three siblings). NAT shows LINE / PACKING / TOTAL YIELD.
+Removed in rev 5. They targeted `data[TYPE][pair][PROCESS-HALF]`, which no longer exists. What they were for, and where it now lives:
+
+| Old task | Substance | Now in |
+|---|---|---|
+| Task 3 | ANT cards read `s_act_pd` etc.; those fields never existed on NHT ANT | Task 6 Step 3 — cards read `line.machines.AN` bare fields |
+| Task 3 Step 4 | Flow bar read `s_status_alarm` / `f_status_alarm`, neither of which exists | Task 6 Step 4 — gates on `status_alarm === "RUNNING"` |
+| Task 4 | PACKING + TOTAL YIELD header tiles | Task 6 Step 2 — reads `machines.ALU.act_pd` and products `curr_yield` |
+| Task 5 | Uncomment route, un-disable home card | Task 6 Step 6 — unchanged in substance |
+
+---
+
+## Task 6: Rewrite the FE page for the flat line array
+
+The page is built around four near-identical blocks (MA/MD × FIRST/SECOND) reading `data[TYPE][pair][PROCESS-HALF]`. The new payload is one entry per line, so those four blocks collapse into a single component mapped over `data`. This is the DRY cleanup the plan previously deferred — it is no longer optional, because the duplication has nothing left to duplicate.
 
 **Files:**
+
 - Modify: `dx-center-front/src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx`
+- Modify: `dx-center-front/src/App.jsx`
+- Modify: `dx-center-front/src/pages/nhtNew/NhtHomeNew.jsx`
 
-### Step 1: Add a shared total-yield helper
+**Layout decision (settled 2026-09-01):** **one flat list**, FL-01 → FL-74 followed by the two Over Lines, in `line_id` order. No MA/MD sections — the distinction is not in the payload and the requester does not want it reintroduced.
 
-Above the component's `return`, add:
+### Step 1: Replace the data plumbing
+
+`data` is now an array. The fetch and countdown logic stay; the consumer changes from `data.MA` / `data.MD` object walks to a single `data.map()`. Render order is the array's own order — do not re-sort.
+
+### Step 2: Build `LineRow`
+
+One component per line, receiving `{ line_name, machines }`. It renders:
+
+- the header tiles — `LINE : {line_name}`, `PACKING` from `machines.ALU?.act_pd`, `TOTAL YIELD` from the helper below
+- one card per process in fixed display order: `MBR` → `GSSM` → `FIM` → `AN`
+- the flow bar between cards
+
+**Cards render only for processes present in `machines`.** A 3-machine line (FL-17…FL-36) has no FIM and no ALU; it must not render an empty FIM card or a `PACKING` of `NaN`. Decide once whether an absent process yields a gap or a greyed placeholder, and apply it consistently — the master shapes table says 17 lines will exercise this.
+
+Total-yield helper, now reading a `machines` object rather than a group:
 
 ```js
 const YIELD_PROCESSES = ["MBR", "GSSM", "FIM", "AN"];
 
-// Line yield is the product of each process's yield. Processes with no data
-// contribute 1 (neutral); if none reported, the line has no yield to show.
-const lineTotalYield = (group, half) => {
-  const rates = YIELD_PROCESSES.map((p) => group?.[`${p}-${half}`]).map((row) => row?.s_curr_yield ?? row?.curr_yield).filter((v) => typeof v === "number" && v > 0);
+// Line yield is the product of each present process's yield. Absent or
+// zero-yield processes are skipped; if none reported, there is nothing to show.
+const lineTotalYield = (machines) => {
+  const rates = YIELD_PROCESSES
+    .map((p) => machines?.[p])
+    .map((row) => row?.s_curr_yield ?? row?.curr_yield)
+    .filter((v) => typeof v === "number" && v > 0);
 
   if (rates.length === 0) return "0.00";
   return (rates.reduce((acc, v) => acc * (v / 100), 1) * 100).toFixed(2);
 };
 ```
 
-**Why not copy NAT's version.** NAT's page multiplies `yield_calc_total` (`NatAssyCombineRealtime.jsx:62-84`), which is a genuine field — every NAT module returns it (`api_nat/assy_mbr_realtime.js:101`, `assy_ant_realtime.js:183`, and so on). **No NHT module returns it.** Copying NAT's math unchanged gives `0.00` on every line.
+`s_curr_yield ?? curr_yield` still covers the mixed prefix convention: MBR and GSSM are `s_`-prefixed, FIM and ANT are bare. See the field-name contract table.
 
-Per the requester's decision, NHT derives the tile from `curr_yield` in the frontend rather than adding `yield_calc_total` to the four NHT backend modules. `s_curr_yield ?? curr_yield` covers the mixed prefix convention documented in Ground Truth (MBR and GSSM are `s_`-prefixed; FIM and ANT are bare).
+**Why not NAT's version:** NAT multiplies `yield_calc_total`, which no NHT module returns. Copying it unchanged gives `0.00` on every line. Deferred backend alternative is logged under Follow-ups.
 
-Consequence to accept: the two plants now compute the same tile by different routes, so a future change to yield semantics must be made twice. Logged under Follow-ups.
+### Step 3: Point the ANT card at bare field names
 
-### Step 2: Extract the header tile into a local component
+Inside `LineRow`, the ANT card reads `machines.AN` with **bare** names — `act_pd`, `diff_pd`, `act_ct`, `diff_ct`, `target_yield`, `curr_yield`, `status_alarm`. The old page used `s_`-prefixed reads, which the NHT backend has never sent.
 
-Replace the inline header markup with a reusable helper, defined next to `lineTotalYield`:
+Title is `machines.AN?.mc_no` with **no** `(FRONT)` / `(REAR++)` / `(REAR!!)` suffix — NHT ANT is single-spindle and there is one per line, so the front/rear labelling was always a NAT concept.
 
-```jsx
-const LineHeader = ({ lineNo, packing, totalYield }) => (
-  <div className="flex gap-[0.83vw] mb-2">
-    <div className="w-[8.33vw] h-[4.0vw] font-semibold text-slate-700 rounded-xl border bg-white shadow-md flex flex-col justify-center items-center">
-      <div className="text-[clamp(1rem,1.25vw,1.5rem)]">LINE : {lineNo}</div>
-    </div>
-    <div className="w-[9vw] h-[4.0vw] font-semibold text-slate-700 rounded-xl border bg-white shadow-md flex flex-col justify-center items-center">
-      <div className="text-[clamp(0.8rem,0.94vw,1.125rem)]">PACKING</div>
-      <div className="text-[clamp(0.875rem,1.04vw,1.25rem)]">{packing}</div>
-    </div>
-    <div className="w-[9vw] h-[4.0vw] font-semibold text-slate-700 rounded-xl border bg-white shadow-md flex flex-col justify-center items-center">
-      <div className="text-[clamp(0.8rem,0.94vw,1.125rem)]">TOTAL YIELD</div>
-      <div className="text-[clamp(0.875rem,1.04vw,1.25rem)]">{totalYield}%</div>
-    </div>
-  </div>
-);
-```
-
-### Step 3: Use it in all four header slots
-
-In each of the four places (MA odd, MA even, MD odd, MD even), replace the inline `<div className="flex gap-[0.83vw] mb-2">…</div>` block with:
+### Step 4: Flow bar gates on `status_alarm`
 
 ```jsx
-<LineHeader
-  lineNo={item.split("&")[0]}
-  packing={(data["ALU-FIRST"]?.act_pd ?? 0).toLocaleString()}
-  totalYield={lineTotalYield(data, "FIRST")}
-/>
+className={`w-3 h-full ${
+  machines.AN?.status_alarm === "RUNNING"
+    ? "animated-flow"
+    : machines.AN?.status_alarm === undefined
+    ? "bg-gray-300"
+    : "bg-red-500"
+}`}
 ```
 
-and for the even/`SECOND` rows, `item.split("&")[1]`, `data["ALU-SECOND"]`, `"SECOND"`.
+### Step 5: Verify
 
-### Step 4: Verify
+Reload the page and check:
 
-Reload the page. Each line header shows three tiles. PACKING is non-zero for lines that have an ALU machine; TOTAL YIELD is a plausible percentage (typically 90–100), **not** `NaN` and not `0.00` across the board.
+1. 76 rows, FL-01 first, Over Line 2 last
+2. FL-01 shows MBR / GSSM / AN / (no FIM); FL-52 shows all four; FL-17 shows MBR / GSSM / AN
+3. `PACKING` is non-zero on lines with an ALU, blank or `—` on the 3-machine lines — **not** `NaN`
+4. `TOTAL YIELD` is a plausible percentage, not `0.00` across the board
+5. Countdown ticks 30 → 0 and the payload refreshes
 
-If every TOTAL YIELD reads `0.00`, the process keys in `YIELD_PROCESSES` don't match the payload — re-check against the key list from Task 2 Step 4 (remember ANT is `AN`, not `ANT`).
+If every `TOTAL YIELD` reads `0.00`, the keys in `YIELD_PROCESSES` don't match the payload — remember ANT is `AN`, not `ANT`.
 
-### Step 5: Lint and commit
+### Step 6: Enable the route and the entry points
 
-```bash
-cd dx-center-front && npm run lint:fix
-git add src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx
-git commit -m "feat(nht): add PACKING and TOTAL YIELD tiles to combine line headers"
-```
+`App.jsx:241` — uncomment:
 
----
-
-## Task 5: Enable the route and the entry points
-
-**Files:**
-- Modify: `dx-center-front/src/App.jsx:241`
-- Modify: `dx-center-front/src/pages/nhtNew/NhtHomeNew.jsx:54`
-
-### Step 1: Uncomment the route
-
-`App.jsx:241`, change:
 ```jsx
-              {/* <Route path="assy-combine-realtime" element={<NhtMbrCombineRealtime />} /> */}
-```
-to:
-```jsx
-              <Route path="assy-combine-realtime" element={<NhtMbrCombineRealtime />} />
+<Route path="assy-combine-realtime" element={<NhtMbrCombineRealtime />} />
 ```
 
-`NhtMbrCombineRealtime` is already imported eagerly at `App.jsx:14`. Every other NHT page is `lazy()`-loaded (`App.jsx:67-77`), so convert it for consistency: delete the line-14 import and add alongside the others:
+`NhtMbrCombineRealtime` is imported eagerly at `App.jsx:14`. Every other NHT page is `lazy()`-loaded (`App.jsx:67-77`), so convert it: delete the line-14 import and add
 
 ```js
 const NhtMbrCombineRealtime = lazy(() => import("./pages/nhtNew/assy/NhtMbrCombineRealtime"));
 ```
 
-### Step 2: Un-disable the home card
+`NhtHomeNew.jsx:54` — remove the `disabled` prop. `NhtSidebar.jsx:54` already links correctly.
 
-`NhtHomeNew.jsx:54`, remove the `disabled` prop:
-```jsx
-<CardButton title="Combine" color="bg-lightblue" path="/nht/assy-combine-realtime"/>
-```
+Then verify end to end: `/nht` → Combine card → page; sidebar → Assy → Combine → same page.
 
-`NhtSidebar.jsx:54` already links to the route and needs no change.
-
-### Step 3: Verify end to end
-
-1. Navigate `/nht` → click the Combine card → lands on the page
-2. Sidebar → Assy → Combine → same page
-3. Both MA and MD sections render, each with line groups
-4. All four card types show data; the countdown ticks 30 → 0 and the payload refreshes
-
-### Step 4: Lint and commit
+### Step 7: Lint and commit
 
 ```bash
 cd dx-center-front && npm run lint:fix
-git add src/App.jsx src/pages/nhtNew/NhtHomeNew.jsx
-git commit -m "feat(nht): enable assy combine realtime route and home entry"
+git add src/pages/nhtNew/assy/NhtMbrCombineRealtime.jsx src/App.jsx src/pages/nhtNew/NhtHomeNew.jsx
+git commit -m "feat(nht): rewrite assy combine page for per-line payload and enable the route"
 ```
-
----
 
 ## Follow-ups (not in scope — raise separately)
 
-- **`NhtMbrCombineRealtime.jsx` is ~630 lines of four-way duplication.** MA and MD blocks are near-identical, and within each, FIRST and SECOND are near-identical. A `<LineGroup type half data />` extraction would cut it by roughly two thirds. Worth doing once the page is confirmed correct — not before, since the duplication is currently the only thing making the two halves independently debuggable.
+- ~~**`NhtMbrCombineRealtime.jsx` is ~630 lines of four-way duplication.**~~ Promoted into Task 6 by rev 5 — the flat payload leaves nothing to duplicate, so the `LineRow` extraction is now mandatory rather than deferred.
 - **`summarize()`'s `avg_oee` is wrong for every plant.** [`util/realtimeMachinesRoute.js:37`](../../local-backend/util/realtimeMachinesRoute.js) multiplies per-machine OEE ratios, so the "average" collapses toward zero as machine count rises. Affects every `/machines` endpoint using `makeMachinesHandler`.
 - **`MBR_F` has no status field.** `f_status_alarm` is commented out at [`assy_mbrf_realtime.js:16,60`](../../local-backend/api_nht/assy_mbrf_realtime.js), so the MBR card's GAUGE column can never show a status colour. Uncommenting it needs a check on which raw field carries gauge-spindle status.
 - **AOD's field names are a trap.** `target_actual / diff_prod / cycle_t / yield_rate` match neither `DefaultCard` nor any `SUMMARY_FIELDS` entry. The next person who copies AOD as a template inherits a broken card. ANT is the second file to have fallen into this.
 - **`plan_shutdown` is always `0` across all of NHT.** Every `api_nht` module reads `runInfo.sum_planshutdown_duration`, but the running-time SQL emits **`sum_planstop_duration`** ([`buildRunningTimeSql.js:152`](../../local-backend/util/buildRunningTimeSql.js)). `availability` and `oee` are therefore overstated everywhere. Nine files, one-word fix each — deferred by decision on 2026-08-26. The same change should address the neighbouring issue that `runningTimeData.find((rt) => rt.mc_no === item.mc_no)` can match the `plan stop` row instead of the `run` row, since `dataType:"status"` emits one row per `mc_status`.
 - **`_store_ant.js`'s header comment is stale.** Lines 4–9 describe `master_mc_no_front_rear` and SQL mode `withPlanStopAnt`; the code at lines 33 and 40 uses `master_mc_no_status` and `withPlanStop` / `dataType:"status"`. This comment cost a full round of misdiagnosis in rev 1–3. Delete or correct it.
-- **TOTAL YIELD is computed differently per plant.** NAT multiplies the backend's `yield_calc_total`; NHT derives the product from `curr_yield` in the frontend (Task 4). Adding `yield_calc_total` to NHT's MBR, GSSM, FIM and ANT modules would let both pages share one implementation — four one-line backend changes, deferred here by decision.
+- **TOTAL YIELD is computed differently per plant.** NAT multiplies the backend's `yield_calc_total`; NHT derives the product from `curr_yield` in the frontend (Task 6 Step 2). Adding `yield_calc_total` to NHT's MBR, GSSM, FIM and ANT modules would let both pages share one implementation — four one-line backend changes, deferred here by decision.
+- **`DefaultCard`'s `assyProcess` list is missing `'AN'`.** [`DefaultCard.jsx:44-45`](../../../dx-center-front/src/components/redesign/realtime/DefaultCard.jsx) gates the Yield gauge on `assyProcess.includes(data.process)`. The array contains `'ANT'`, but ANT's `process` value is `"AN"`, so the standalone ANT page returns `target_yield` / `curr_yield` and renders no Yield row. One-word fix, but it touches a component shared by every plant — raised 2026-08-26, not applied.
+- **Two `assy_machine` rows have a trailing CRLF.** `WANTMD98\r\n` and `WANTMD99\r\n`, both on the Over Lines. `_master_assy_line.js` strips control characters in SQL so they join correctly, but the rows should be cleaned at source and the import that produced them checked.
+- **`createRunningTimeCache` is misnamed.** It is a generic TTL cache with single-flight coalescing; `_master_assy_line.js` now uses it for master data. Either rename it or move it to a neutral module name.
 - **The page name no longer fits.** `NhtMbrCombineRealtime` renders MBR, GSSM, FIM and ANT. `NhtAssyCombineRealtime` would match the NAT/MCB naming, but renaming touches `App.jsx` and both entry points — do it as its own change.
