@@ -7,13 +7,26 @@ const { queryCurrentRunningTime: currentGSSM, getMachineData: machineDataGSSM, p
 const { queryCurrentRunningTime: currentFIM, getMachineData: machineDataFIM, prepareRealtimeData: prepareFIM } = require("./assy_fim_realtime");
 const { queryCurrentRunningTime: currentANT, getMachineData: machineDataANT, prepareRealtimeData: prepareANT } = require("./assy_ant_realtime");
 const { queryCurrentRunningTime: currentALU, getMachineData: machineDataALU, prepareRealtimeData: prepareALU } = require("./assy_alu_realtime");
+const { getLineMaster } = require("./_master_assy_line");
 const router = express.Router();
 
-//* wait for master mapping each line[list machine name for each line]
+// A live machine absent from `assy_machine` is dropped from the response. That
+// is a master-data gap, not a runtime error, so it must not fail the request —
+// but it must not vanish silently either. Warn only when the set changes,
+// otherwise a permanent gap would log on every 30s poll.
+let lastUnmappedKey = "";
+const warnUnmapped = (mcNos) => {
+  const key = mcNos.sort().join(",");
+  if (key === lastUnmappedKey) return;
+  lastUnmappedKey = key;
+  if (key) console.warn(`[nht/assy/combine-realtime] ${mcNos.length} machine(s) not in assy_machine master:`, key);
+};
+
 router.get("/", async (req, res) => {
   // One shared instant so every process computes the same shift window.
   const now = moment();
-  const [runMBRF, runMBR, runGSSM, runFIM, runANT, runALU] = await Promise.all([
+  const [master, runMBRF, runMBR, runGSSM, runFIM, runANT, runALU] = await Promise.all([
+    getLineMaster(),
     currentMBRF(),
     currentMBR(),
     currentGSSM(),
@@ -29,77 +42,27 @@ router.get("/", async (req, res) => {
   const dataANT = prepareANT(machineDataANT(), runANT, now);
   const dataALU = prepareALU(machineDataALU(), runALU, now);
 
-  const combinedData = [...dataMBR, ...dataMBRF, ...dataGSSM, ...dataFIM, ...dataANT, ...dataALU].map((item) => {
-    const type = item.mc_no.includes("MA") ? "MA" : "MD";
-    const machineNumber = parseInt(item.mc_no.slice(-2));
+  // The line set comes from master, so the page renders a stable row set even
+  // when a whole line stops reporting. Lines with no live machine keep `{}`.
+  const byLineId = new Map(master.lines.map((line) => [line.line_id, { ...line, machines: {} }]));
 
-    let lineMaster = "";
-
-    if (type === "MA") {
-      // เงื่อนไข MA:
-      // 1-32 (คี่) หรือ 33-36 (คี่) จริงๆ คือ 1-36 (คี่)
-      if (
-        machineNumber >= 1 &&
-        machineNumber <= 36 &&
-        machineNumber % 2 !== 0
-      ) {
-        lineMaster = `${item.process}-FIRST`;
-      } else {
-        lineMaster = `${item.process}-SECOND`;
-      }
-    } else if (type === "MD") {
-      // เงื่อนไข MD:
-      // 1-22 (คี่) OR 23 (คี่) OR 24-38 (คู่)
-      const isOdd1to23 =
-        machineNumber >= 1 && machineNumber <= 23 && machineNumber % 2 !== 0;
-      const isEven24to38 =
-        machineNumber >= 24 && machineNumber <= 38 && machineNumber % 2 === 0;
-
-      if (isOdd1to23 || isEven24to38) {
-        lineMaster = `${item.process}-FIRST`;
-      } else {
-        lineMaster = `${item.process}-SECOND`;
-      }
+  const unmapped = [];
+  for (const item of [...dataMBR, ...dataMBRF, ...dataGSSM, ...dataFIM, ...dataANT, ...dataALU]) {
+    const home = master.byMcNo.get(item.mc_no);
+    if (!home) {
+      unmapped.push(item.mc_no);
+      continue;
     }
-    return {
-      ...item,
-      lineMaster,
-      line: machineNumber,
-    };
-  });
-
-  const finalStructure = combinedData.reduce((acc, machine) => {
-    
-    
-    const type = machine.mc_no.includes("MA") ? "MA" : "MD";
-    // 1. คำนวณ GroupKey (1&2, 3&4, ...)
-    const groupIndex = Math.floor((machine.line - 1) / 2);
-    const startLine = groupIndex * 2 + 1;
-    const endLine = groupIndex * 2 + 2;
-    const groupKey = `${startLine}&${endLine}`;
-
-    // 2. สร้างโครงสร้าง Object ชั้นนอกสุด (MA หรือ MD)
-    if (!acc[type]) acc[type] = {};
-
-    // 3. สร้างโครงสร้างกลุ่ม Line (1&2) ภายใน Type
-    if (!acc[type][groupKey]) acc[type][groupKey] = {};
-
-    // 4. สร้าง Object สำหรับ lineMaster (เช่น XXX-FIRST) ถ้ายังไม่มี
-    if (!acc[type][groupKey][machine.lineMaster]) {
-      acc[type][groupKey][machine.lineMaster] = {};
-    }
-
-    // 5. เก็บข้อมูลเครื่องจักรโดยใช้ mc_no เป็น Key (เพื่อให้ได้โครงสร้าง { "mc_no": {data} })
-    acc[type][groupKey][machine.lineMaster] = machine;
-
-    return acc;
-  }, {});
+    // Keyed by the live record's own process, not by master's mg_code: MBR and
+    // MBR_F share one mc_no, so only `process` tells the two records apart.
+    byLineId.get(home.line_id).machines[item.process] = item;
+  }
+  warnUnmapped(unmapped);
 
   res.json({
     success: true,
     message: "NHT Assembly Combine Realtime API is working",
-    // old_data: finalStructure1,
-    data: finalStructure,
+    data: [...byLineId.values()],
   });
 });
 
