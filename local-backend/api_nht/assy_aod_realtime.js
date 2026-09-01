@@ -1,16 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const moment = require("moment");
+
 
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
+const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
 const { getStore } = require("./_store_assy");
 
 const startTime = 6;
 const store = getStore("AOD");
 
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
-  const { elapsedMin } = shiftWindow(now, startTime);
+  const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
   return Object.values(currentMachineData).map((item) => {
     const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
@@ -27,18 +28,23 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     }
     const target_ct = item.target_ct || 0;
+    const target_utl = item.target_utl || 0;
+    const target_yield = item.target_yield || 0;
 
-    const act_pd = item.daily_ok || 0;
-    const ng_pd = item.daily_ag || 0;
-    const cycle_t = item.cycle_t / 100 || 0;
+    const act_pd = item.ok_prod || 0;
+    const ng_pd = item.ng_prod || 0;
+    const act_ct = item.cycletime / 100 || 0;
 
-    const target_actual = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
+    const target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
 
     const total_pd = act_pd + ng_pd;
-    const diff_prod = act_pd - target_actual;
-    const diff_ct = Number((cycle_t - target_ct).toFixed(2));
+    const diff_pd = act_pd - target_pd;
+    const diff_ct = Number((act_ct - target_ct).toFixed(2));
 
-    const yield_rate = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
+    const curr_yield = Number(((act_pd / (act_pd + ng_pd)) * 100 || 0).toFixed(2));
+
+    const denom_utl = target_ct > 0 ? (elapsedSec * item.ring_factor) / target_ct : 0;
+    const curr_utl = denom_utl > 0 ? Number(((total_pd / denom_utl) * 100).toFixed(2)) || 0 : 0;
 
     const plan_shutdown = runInfo.sum_planshutdown_duration || 0;
     const downtime_seconds = total_time - sum_run - plan_shutdown;
@@ -46,7 +52,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const availability = Number(((sum_run / (total_time - plan_shutdown)) * 100).toFixed(2)) || 0;
     const denom_perf = target_ct > 0 && total_time - plan_shutdown > 0 ? (total_time - plan_shutdown) / target_ct : 0;
     const performance = denom_perf > 0 ? Number((((act_pd + ng_pd) / denom_perf) * 100).toFixed(2)) || 0 : 0;
-    const oee = Number(((performance / 100) * (availability / 100) * (yield_rate / 100) * 100).toFixed(2)) || 0;
+    const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
       ...item,
@@ -55,15 +61,18 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       process: item.process.toUpperCase(),
       status_alarm,
       target,
-      target_actual,
+      target_pd,
       total_pd,
-      diff_prod,
       act_pd,
       ng_pd,
-      yield_rate,
+      diff_pd,
+      act_ct,
       target_ct,
       diff_ct,
-      cycle_t,
+      curr_yield,
+      target_yield,
+      curr_utl,
+      target_utl,
       sum_run,
       total_time,
       opn,
@@ -76,35 +85,16 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   });
 };
 
-router.get("/machines", async (req, res) => {
-  try {
-    const now = moment();
-    const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
-    const dataArray = prepareRealtimeData(machines, runningTime, now);
-    const summary = dataArray.reduce(
-      (acc, item) => {
-        acc.total_target += item.target_actual || 0;
-        acc.total_ok += item.act_pd || 0;
-        acc.total_cycle_t += item.cycle_t || 0;
-        acc.total_opn += item.opn || 0;
-        acc.count += 1;
-        return acc;
-      },
-      { total_target: 0, total_ok: 0, total_cycle_t: 0, total_opn: 0, count: 0 },
-    );
+router.get(
+  "/machines",
+  makeMachinesHandler({
+    getMachines: () => store.getRawMap(),
+    getRunningTime: store.getRunningTime,
+    prepareRealtimeData,
+    summary: "standard",
+  }),
+);
 
-    const resultSummary = {
-      sum_target: summary.total_target,
-      sum_daily: summary.total_ok,
-      avg_cycle_t: summary.count > 0 ? Number((summary.total_cycle_t / summary.count).toFixed(2)) : 0,
-      avg_opn: summary.count > 0 ? Number((summary.total_opn / summary.count).toFixed(2)) : 0,
-    };
-    res.json({ success: true, data: dataArray, resultSummary });
-  } catch (error) {
-    console.error("API Error in /machines: ", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
 
 module.exports = {
   router,

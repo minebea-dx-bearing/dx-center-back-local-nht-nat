@@ -81,6 +81,7 @@ app.use("/nht/assy/mbrf-realtime", require("./api_nht/assy_mbrf_realtime").route
 app.use("/nht/assy/fim-realtime", require("./api_nht/assy_fim_realtime").router);
 app.use("/nht/assy/gssm-realtime", require("./api_nht/assy_gssm_realtime").router);
 app.use("/nht/assy/ant-realtime", require("./api_nht/assy_ant_realtime").router);
+app.use("/nht/assy/aod-realtime", require("./api_nht/assy_aod_realtime").router);
 app.use("/nht/assy/avs-realtime", require("./api_nht/assy_avs_realtime").router);
 app.use("/nht/assy/alu-realtime", require("./api_nht/assy_alu_realtime").router);
 app.use("/nht/assy/mbr-analysis-by-mc", require("./api_nht/assy_mbr_analysis_by_mc"));
@@ -88,6 +89,8 @@ app.use("/nht/assy/fim-analysis-by-mc", require("./api_nht/assy_fim_analysis_by_
 app.use("/nht/assy/gssm-analysis-by-mc", require("./api_nht/assy_gssm_analysis_by_mc"));
 app.use("/nht/assy/avs-analysis-by-mc", require("./api_nht/assy_avs_analysis_by_mc"));
 app.use("/nht/assy/alu-analysis-by-mc", require("./api_nht/assy_alu_analysis_by_mc"));
+app.use("/nht/assy/aod-analysis-by-mc", require("./api_nht/assy_aod_analysis_by_mc"));
+app.use("/nht/assy/ant-analysis-by-mc", require("./api_nht/assy_ant_analysis_by_mc"));
 app.use("/nht/assy/getDataPart", require("./api_nht/getDataPart"));
 app.use("/nht/assy/combine-realtime", require("./api_nht/assy_combine_realtime"));
 
