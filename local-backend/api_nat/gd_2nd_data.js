@@ -25,7 +25,7 @@ router.get("/getData/:startQuery/:endQuery", async (req, res) => {
             [calc_ct] AS (
                 SELECT work_date, ROUND(AVG([avgct])/100, 2) AS [avgct], LEFT(mc_no, 4) AS mc_no, MAX(mc_type) AS mc_type
                 FROM [data]
-                WHERE [avgct]>=200 AND [avgct]<=400
+                WHERE [avgct]>=200 AND [avgct]<=280
                 GROUP BY work_date, mc_no
             ),
             [max_ct] AS (
