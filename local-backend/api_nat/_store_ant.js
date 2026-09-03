@@ -20,7 +20,7 @@ const { buildRunningTimeSql } = require("../util/buildRunningTimeSql");
 const processName = "ANT";
 const startHour = 6;
 const DATABASE_PROD = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
-const DATABASE_ALARM = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_ALARMLIS_${processName.toUpperCase()}]`;
+const DATABASE_STATUS = `[nat_mc_assy_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_assy_${processName.toLowerCase()}_new].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
 const hub = getHub(`mqtt://${process.env.NAT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
@@ -29,14 +29,14 @@ const store = createProcessStore({
   processName,
   startHour,
   hub,
-  masterLoader: () => master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_ALARM, DATABASE_MASTER),
+  masterLoader: () => master_mc_no_front_rear(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_MASTER),
 });
 
 const runningTimeCache = createRunningTimeCache({
   ttlMs: 20_000,
   keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
   loader: async () => {
-    const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStopAnt" });
+    const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStopAnt", dataType:"status" });
     const result = await dbms.query(sql);
     return result[1] > 0 ? result[0] : [];
   },
