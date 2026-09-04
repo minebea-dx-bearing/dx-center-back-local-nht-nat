@@ -10,7 +10,7 @@ app.use(cors());
 
 // NAT Routes
 app.use("/nat/tn/tn-realtime", require("./api_nat/tn_tn_realtime").router);
-app.use("/nat/tn/tn-realtime-redis", require("./api_nat/tn_tn_realtime_redis").router);
+app.use("/nat/tn/tn-realtime-redis", require("./api_nat/tn_tn_realtime_sse").router);
 app.use("/nat/tn/tn-sum-alarm", require("./api_nat/tn_tn_sum_alarm"));
 app.use("/nat/tn/tn-daily", require("./api_nat/tn_tn_daily"));
 app.use("/nat/tn/tn-summary", require("./api_nat/tn_tn_summary"));
