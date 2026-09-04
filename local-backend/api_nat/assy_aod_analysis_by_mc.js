@@ -5,7 +5,7 @@ const moment = require("moment-timezone");
 const getData = require("../util/analysis_assy")
 
 const DATABASE_PROD = "[nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]";
-const DATABASE_ALARM = "[nat_mc_assy_aod].[dbo].[DATA_ALARMLIS_AOD]";
+const DATABASE_STATUS = "[nat_mc_assy_aod].[dbo].[DATA_MCSTATUS_AOD]";
 const DATABASE_IOT = "[nat_mc_assy_aod].[dbo].[MONITOR_IOT]";
 const DATABASE_MASTER = "[nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]";
 
@@ -46,7 +46,7 @@ router.get("/production_hour_by_mc/:mc_no/:date", async (req, res) => {
 router.get("/status/:mc_no/:date", async (req, res) => {
   try {
     let { mc_no, date } = req.params;
-    const result = await getData.alarm(dbms, DATABASE_ALARM, DATABASE_IOT, mc_no, date)
+    const result = await getData.status(dbms, DATABASE_PROD, DATABASE_STATUS, DATABASE_IOT, mc_no, date)
     res.json(result);
   } catch (error) {
     res.json({ data: error, dataAlarm: [], success: false });

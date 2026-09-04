@@ -35,8 +35,8 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
     const status_front = (item.mqtt_status?.includes("(FRONT)")) ? item.mqtt_status : null
     const status_rear = (item.mqtt_status?.includes("(REAR)")) ? item.mqtt_status : null
     
-    const data_front = {...item, mc_no: mc_no_front, status: item.status_front, occurred: item.occurred_front, mqtt_status: alarm_front}
-    const data_rear = {...item, mc_no: mc_no_rear, status: item.status_rear, occurred: item.occurred_rear, mqtt_status: alarm_rear}
+    const data_front = {...item, mc_no: mc_no_front, status: item.status_front, occurred: item.occurred_front, mqtt_status: status_front}
+    const data_rear = {...item, mc_no: mc_no_rear, status: item.status_rear, occurred: item.occurred_rear, mqtt_status: status_rear}
     
     new_currentMachineData[mc_no_rear] = data_rear
     new_currentMachineData[mc_no_front] = data_front
