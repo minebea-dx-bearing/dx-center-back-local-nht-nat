@@ -15,32 +15,51 @@ const router = express.Router();
 const determineMachineStatus = require("../util/determineMachineStatus");
 const shiftWindow = require("../util/shiftWindow");
 const { makeMachinesHandler } = require("../util/realtimeMachinesRoute");
-const store = require("./_store_ant");
+const { getStore } = require("./_store_assy_status");
 
 const startTime = 6;
+const store = getStore("ANT");
 
 const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => {
   // console.log(currentMachineData)
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
-  const new_currentMachineData = {}
-  
-  Object.values(currentMachineData).map((item) => {
-    // set mc_no into 2 no. -> mc_no for rear = odd no.
-    //                      -> mc_no for front = even no.
-    // for example: ANT01 includes front side and rear side -> split into ANT01 for rear side and ANT02 for front side
-    const mc = Number(item.mc_no.slice(-2))
-    const calc_mc_no = mc+(mc-1)
-    const mc_no_front = item.mc_no.slice(0,3) + String(mc*2).padStart(2, '0')
-    const mc_no_rear = item.mc_no.slice(0,3) + String(calc_mc_no).padStart(2, '0')
-    const status_front = (item.mqtt_status?.includes("(FRONT)")) ? item.mqtt_status : null
-    const status_rear = (item.mqtt_status?.includes("(REAR)")) ? item.mqtt_status : null
+
+  const new_currentMachineData = Object.entries(currentMachineData).reduce((acc, [mcKey, item]) => {
+    const lastNumber = Number(item.mc_no.slice(-1));
+    const isOdd = lastNumber % 2 !== 0; // เลขคี่ = rear, เลขคู่ = front
     
-    const data_front = {...item, mc_no: mc_no_front, status: item.status_front, occurred: item.occurred_front, mqtt_status: status_front}
-    const data_rear = {...item, mc_no: mc_no_rear, status: item.status_rear, occurred: item.occurred_rear, mqtt_status: status_rear}
-    
-    new_currentMachineData[mc_no_rear] = data_rear
-    new_currentMachineData[mc_no_front] = data_front
-  })
+    // คำศัพท์ที่เราต้องการค้นหาต่อท้าย (ถ้าเลขคี่หา _rear, ถ้าเลขคู่หา _front)
+    const targetSuffix = isOdd ? '_rear' : '_front';
+    const oppositeSuffix = isOdd ? '_front' : '_rear';
+    const targetPrefix = isOdd ? 'rear_' : 'front_';
+    const oppositePrefix = isOdd ? 'front_' : 'rear_';
+
+    const newItem = { mc_no: item.mc_no };
+
+    // วนลูปอ่านทุก Key ที่มีอยู่ใน item นั้นๆ แบบไดนามิก
+    Object.keys(item).forEach((key) => {
+      if (key === 'mc_no') return;
+
+      // ถ้า Key ลงท้ายด้วย Suffix ที่เราต้องการ (เช่น ok_rear -> ตัดเหลือ ok)
+      if (key.endsWith(targetSuffix)) {
+        const cleanKey = key.replace(targetSuffix, '');
+        newItem[cleanKey] = item[key];
+      }
+      else if (key.startsWith(targetPrefix)) {
+        const cleanKey = key.replace(targetPrefix, '');
+        newItem[cleanKey] = item[key];
+      }
+      else if (key.endsWith(oppositeSuffix) || key.startsWith(oppositePrefix)) {
+        return;
+      }
+      else {
+        newItem[key] = item[key];
+      }
+    });
+
+    acc[mcKey] = newItem;
+    return acc;
+  }, {});
   
   let curr_mc_no = Object.keys(new_currentMachineData); 
   for(let i=1; i<13; i++){
@@ -50,17 +69,12 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
           process: "ant",
             mc_no: target,
             part_no: "no setup",
-            ok_front: 0,
-            cycle_time_front: 0,
-            ag_front: 0,
-            ng_front: 0,
-            mixball_front: 0,
-            ok_rear: 0,
-            cycle_time_rear: 0,
-            ag_rear: 0,
-            ng_rear: 0,
-            mixball_rear: 0,
-            status: 'SIGNAL LOSE',
+            cycle_time: 0,
+            ok: 0,
+            ag: 0,
+            ng: 0,
+            mixball: 0,
+            status: 'SIGNAL LOST',
             target_ct: 0,
             target_utl: 0,
             target_yield: 0,
@@ -69,45 +83,9 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
           }
     }
   }
-
-  const antMaster = await store.master(); 
-  // console.log(antMaster)
-  Object.keys(new_currentMachineData).forEach((key) => {
-    const item = new_currentMachineData[key];
-
-    // 1. ค้นหาข้อมูลจาก antMaster ที่ mc_no ตรงกัน
-    const masterArray = antMaster.filter((i) => i.mc_no === item.mc_no.toUpperCase());
-    const targetMaster = masterArray[0];
-
-    // 2. ถ้าเจอข้อมูลใน antMaster ให้ทำการรวมร่าง (Merge) ข้อมูลเข้าไป
-    if (targetMaster) {
-      new_currentMachineData[key] = {
-        ...item,
-        ...targetMaster,
-        mc_no: item.mc_no
-      };
-    }
-    else {
-      new_currentMachineData[key] = {
-        ...item,
-        part_no: "no setup",
-        target_ct: 0,
-        target_utl: 0,
-        target_yield: 0,
-        target_special: 0,
-        ring_factor: 0,
-        mc_no: item.mc_no
-      };
-    }
-  });
-  // console.log(new_currentMachineData);
   
   return Object.values(new_currentMachineData).map((item) => {
     const status_alarm = determineMachineStatus(item, item.status, item.occurred, "status");
-
-    let act_pd = 0;
-    let act_ct = 0;
-    let ng_pd = 0;
 
     let target = 0;
     if (item.target_special > 0) {
@@ -116,17 +94,9 @@ const prepareRealtimeData = async (currentMachineData, runningTimeData, now) => 
       target = Math.floor((86400 / item.target_ct) * (item.target_utl / 100) * (item.target_yield / 100) * item.ring_factor) || 0;
     }
 
-    if(Number(item.mc_no.slice(-2)) % 2 === 0){
-      // even mc_no
-      act_pd = item.ok_front;
-      act_ct = item.cycle_time_front / 100 || 0;
-      ng_pd = item.ag_front + item.ng_front + item.mixball_front;
-    } else {
-      // odd mc_no
-      act_pd = item.ok_rear;
-      act_ct = item.cycle_time_rear / 100 || 0;
-      ng_pd = item.ag_rear + item.ng_rear + item.mixball_rear;
-    }
+    const act_pd = item.ok;
+    const act_ct = item.cycle_time / 100 || 0;
+    const ng_pd = item.ag + item.ng + item.mixball;
 
     const target_ct = item.target_ct || 0;
     const target_yield = item.target_yield || 0;

@@ -912,16 +912,14 @@ SET @sql = N'
 WITH [base] AS (
     SELECT 
         [registered],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 
+        CASE WHEN DATEPART(HOUR, [registered]) = 6 
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
+        CASE WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
             ELSE ''M''
         END AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)) AS [mc_no],
         [ok_front],
         [ag_front],
         [ng_front],
@@ -929,7 +927,7 @@ WITH [base] AS (
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
 	AND [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
+	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-09-02 07:00''
 ),
 [calc] AS (
@@ -963,7 +961,7 @@ WITH [base] AS (
 	SELECT
 		CONVERT(date, [registered]) AS [work_date],
         ''M'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        IIF(CONVERT(date, [registered]) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no],
         [front_shift_m_tt_ok] AS [ok_front],
         [front_shift_m_tt_ag] AS [ag_front],
         [front_shift_m_tt_ng] AS [ng_front],
@@ -973,11 +971,12 @@ WITH [base] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-02''
     AND DATEPART(HOUR, [registered]) = 19
+	AND ((CONVERT(date, [registered]) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
 	UNION ALL
 	SELECT 
         CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
         ''N'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no],
         [front_shift_n_tt_ok] AS [ok_front],
         [front_shift_n_tt_ag] AS [ag_front],
         [front_shift_n_tt_ng] AS [ng_front],
@@ -987,6 +986,7 @@ WITH [base] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
     AND DATEPART(HOUR, [registered]) = 7
+	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1035,14 +1035,7 @@ EXEC sp_executesql
     N'@Month date',
     @Month = @Month;
     `);
-    return antf[0].map((item) => {
-        const mc = Number(item.mc_no.slice(-2))
-        const calc = mc*2
-        return {
-            ...item,
-            mc_no: item.mc_no.slice(0,3) + String(calc).padStart(2, '0'),
-        };
-    });
+    return antf[0]
 };
 
 const queryAntR = async (month) => {
@@ -1078,16 +1071,14 @@ SET @sql = N'
 WITH [base] AS (
     SELECT 
         [registered],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 
+        CASE WHEN DATEPART(HOUR, [registered]) = 6 
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
+        CASE WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
             ELSE ''M''
         END AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)) AS [mc_no],
         [ok_rear],
         [ag_rear],
         [ng_rear],
@@ -1095,7 +1086,7 @@ WITH [base] AS (
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
 	AND [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
+	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-09-02 07:00''
 ),
 [calc] AS (
@@ -1129,7 +1120,7 @@ WITH [base] AS (
 	SELECT
 		CONVERT(date, [registered]) AS [work_date],
         ''M'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        IIF(CONVERT(date, [registered]) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no],
         [rear_shift_m_tt_ok] AS [ok_rear],
         [rear_shift_m_tt_ag] AS [ag_rear],
         [rear_shift_m_tt_ng] AS [ng_rear],
@@ -1139,11 +1130,12 @@ WITH [base] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-02''
     AND DATEPART(HOUR, [registered]) = 19
+	AND ((CONVERT(date, [registered]) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
 	UNION ALL
 	SELECT 
         CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
         ''N'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
+        IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no],
         [rear_shift_n_tt_ok] AS [ok_rear],
         [rear_shift_n_tt_ag] AS [ag_rear],
         [rear_shift_n_tt_ng] AS [ng_rear],
@@ -1153,6 +1145,7 @@ WITH [base] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
     AND DATEPART(HOUR, [registered]) = 7
+	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1201,14 +1194,7 @@ EXEC sp_executesql
     N'@Month date',
     @Month = @Month;
     `);
-    return antr[0].map((item) => {
-        const mc = Number(item.mc_no.slice(-2))
-        const calc = mc+(mc-1)
-        return {
-            ...item,
-            mc_no: item.mc_no.slice(0,3) + String(calc).padStart(2, '0'),
-        };
-    });
+    return antr[0]
 };
 
 const queryAod = async (month) => {
@@ -2428,7 +2414,7 @@ WITH [antr] AS (
         [registered]
 		,[process]
         ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2) AS [mc_no]
+        ,IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2) ,[mc_no]) AS [mc_no]
         ,[rear_daily_tt_ok] AS [daily_ok]
         ,([rear_daily_tt_ok] + [rear_daily_tt_ag] + [rear_daily_tt_ng] + [rear_daily_tt_mix_ball]) AS [total_prod]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
@@ -2436,6 +2422,7 @@ WITH [antr] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
     AND DATEPART(HOUR, [registered]) = 7
+	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
 ),
 [antf] AS (
     SELECT 
@@ -2455,7 +2442,7 @@ WITH [antr] AS (
         [registered]
 		,[process]
         ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2) AS [mc_no]
+        ,IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2), [mc_no]) AS [mc_no]
         ,[front_daily_tt_ok] AS [daily_ok]
         ,([front_daily_tt_ok] + [front_daily_tt_ag] + [front_daily_tt_ng] + [front_daily_tt_mix_ball]) AS [total_prod]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
@@ -2463,6 +2450,7 @@ WITH [antr] AS (
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
     AND DATEPART(HOUR, [registered]) = 7
+	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,

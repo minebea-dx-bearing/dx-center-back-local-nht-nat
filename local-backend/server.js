@@ -36,6 +36,7 @@ app.use("/nat/gd/2gd-sum-alarm", require("./api_nat/gd_2gd_sum_alarm"));
 app.use("/nat/gd/2gdin-combine-realtime", require("./api_nat/gd_2ndIn_combine_realtime"));
 
 app.use("/nat/assy/mbr-realtime", require("./api_nat/assy_mbr_realtime").router);
+app.use("/nat/assy/mbr-realtime-new", require("./api_nat/assy_mbr_realtime_new").router);
 app.use("/nat/assy/mbrf-realtime", require("./api_nat/assy_mbrf_realtime").router);
 app.use("/nat/assy/mbr-sum-alarm", require("./api_nat/assy_mbr_sum_alarm"));
 app.use("/nat/assy/mbr-daily", require("./api_nat/assy_mbr_daily"));

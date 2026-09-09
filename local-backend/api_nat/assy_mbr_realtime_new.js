@@ -12,13 +12,13 @@ const store = getStore("MBR");
 const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
   const { elapsedMin, elapsedSec } = shiftWindow(now, startTime);
 
-
   return Object.values(currentMachineData).map((item) => {
     const year = String(item.date_shift_m_year);
     const month = String(item.date_shift_m_month).padStart(2, '0');
     const day = String(item.date_shift_m_day).padStart(2, '0');
     const shift_m_date = `${year}-${month}-${day}`; 
     const current_date = (now.format("HH:mm") <= "06:05") ? now.subtract(1, 'day').format("YYYY-MM-DD") : now.format("YYYY-MM-DD");
+    console.log(current_date)
 
     let target = 0;
     if (item.target_special > 0) {
@@ -50,22 +50,19 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
 
     // ----- OEE -----
     const runInfo = runningTimeData.find((rt) => rt.mc_no === item.mc_no) || {};
-    // console.log(runInfo)
+    
     const act_opn_time = runInfo.sum_duration || 0;
     const total_work_time = runInfo.total_time || 0;
     const plan_stop = runInfo.sum_planstop_duration || 0;
     const production_count = act_pd + ng_pd || 0;
-    // console.log(item.mc_no, act_opn_time)
 
     const availability = Number(((act_opn_time / (total_work_time - plan_stop)) * 100).toFixed(2)) || 0;
-    // console.log(target_ct, production_count,act_opn_time , item.ring_factor)
     const performance = Number((((target_ct * production_count) / (act_opn_time * item.ring_factor)) * 100).toFixed(2)) || 0;
     const oee = Number(((performance / 100) * (availability / 100) * (curr_yield / 100) * 100).toFixed(2)) || 0;
 
     return {
       part_no: item.part_no,
       mc_no: item.mc_no.toUpperCase(),
-      model: item.model || "NO DATA",
       process: item.process.toUpperCase(),
       target_yield,
       target,
@@ -83,8 +80,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
       performance,
       quality: curr_yield,
       oee,
-      yield_calc_total: yield_calc_total,
-      curr_mc_no
+      yield_calc_total: yield_calc_total
     };
   });
 };
