@@ -15,12 +15,12 @@
  */
 
 const moment = require("moment");
-const dbms = require("../instance/ms_instance_nat");
-const master_mc_no = require("../util/mqtt_master_mc_no");
-const { getHub } = require("../util/mqttHub");
-const { createProcessStore } = require("../util/processStore");
-const { createRunningTimeCache, shiftStartDate } = require("../util/runningTimeCache");
-const { buildRunningTimeSql } = require("../util/buildRunningTimeSql");
+const dbms = require("../../instance/ms_instance_nat");
+const master_mc_no = require("../../util/mqtt_master_mc_no");
+const { getHub } = require("../../util/mqttHub");
+const { createProcessStore } = require("../../util/processStore");
+const { createRunningTimeCache, shiftStartDate } = require("../../util/runningTimeCache");
+const { buildRunningTimeSql } = require("../../util/buildRunningTimeSql");
 
 const startHour = 6;
 const stores = new Map();
@@ -43,7 +43,7 @@ const buildStore = (processName) => {
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour, mode: "withPlanStop" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_ALARM, startHour });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },

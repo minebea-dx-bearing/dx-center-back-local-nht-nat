@@ -22,9 +22,13 @@ function determineMachineStatus(item, alarmStatus, occurredStatus, type) {
       return "RUNNING";
     }
 
+    if (item.mqtt_status?.toUpperCase().includes("STOP")) {
+      return "STOP";
+    }
+
     // 3. ถ้า mqtt ไม่ได้ส่งข้อมูลมาแล้วให้เป็น status สุดท้ายที่ส่งจาก SQL
     if (!item.mqtt_status && alarmStatus) {
-      return alarmStatus.toUpperCase().includes("RUN") ? "RUNNING" : alarmStatus.toUpperCase().replace("_", " ");
+      return alarmStatus.toUpperCase().includes("RUN") ? "RUNNING" : alarmStatus.toUpperCase().includes("STOP") ? "STOP" : alarmStatus.toUpperCase().replace("_", " ");
     }
     
     // 4. ถ้าทั้งคู่ไม่ใช่ "RUN" ให้แสดงสถานะอื่นๆ จาก MQTT (ถ้ามี)

@@ -23,102 +23,15 @@
  * between 00:00 and the boundary we are still inside YESTERDAY's shift.
  */
 
-const ALARM_FILTERS = {
-  withPlanStop: `([alarm] LIKE '%RUN' OR [alarm] LIKE '%RUN_' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
-  withPlanStopAnt: `([alarm] LIKE 'RUN%' OR [alarm] LIKE 'PLAN STOP%' OR [alarm] LIKE 'SETUP%')`,
-};
-
-const FINAL_SELECTS = {
-  withPlanStop: `
-  SELECT
-    [mc_no],
-    CASE WHEN [alarm_base] LIKE '%RUN' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-    CASE WHEN [alarm_base] = 'PLAN STOP' OR [alarm_base] = 'SETUP' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
-    DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-  FROM [filter_time]
-  GROUP BY [mc_no], [alarm_base]`,
-
-  withPlanStopAnt: `
-  ,[alarm_f] AS (
-			SELECT
-				LEFT([mc_no], 3) + '0' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)) AS [mc_no],
-				[alarm_base],
-				CASE WHEN [alarm_base] LIKE 'RUN FRONT%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-				CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
-				DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-			FROM [filter_time]
-			WHERE [alarm_base] LIKE 'RUN FRONT%' OR [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%'
-			GROUP BY [mc_no], [alarm_base]
-		),
-		[alarm_r] AS (
-			SELECT
-				LEFT([mc_no], 3) + '0' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)) AS [mc_no],
-				[alarm_base],
-				CASE WHEN [alarm_base] LIKE 'RUN REAR%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-				CASE WHEN [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
-				DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
-			FROM [filter_time]
-			WHERE [alarm_base] LIKE 'RUN REAR%' OR [alarm_base] LIKE 'PLAN STOP%' OR [alarm_base] LIKE 'SETUP%'
-			GROUP BY [mc_no], [alarm_base]
-		)
-		SELECT * FROM [alarm_f]
-		UNION
-		SELECT * FROM [alarm_r]`,
-
-};
-
-const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dataType }) => {
-  const alarmFilter = ALARM_FILTERS[mode];
-  const finalSelect = FINAL_SELECTS[mode];
-  if (!alarmFilter || !finalSelect) throw new Error(`buildRunningTimeSql: unknown mode "${mode}"`);
-
+const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0 }) => {
   const shiftOffsetMin = startHour * 60 + startMinute;
 
-  const dateHeader = `
+  const query =  `
     DECLARE @now DATETIME = GETDATE();
     DECLARE @start_date DATETIME = DATEADD(MINUTE, ${shiftOffsetMin}, CAST(CAST(DATEADD(MINUTE, -${shiftOffsetMin}, @now) AS DATE) AS DATETIME));
     DECLARE @end_date DATETIME = @now;
     DECLARE @start_date_p1 DATETIME = DATEADD(HOUR, -24, @start_date);
     DECLARE @end_date_p1 DATETIME = DATEADD(HOUR, 2, @end_date);
-  `;
-
-  const query = (dataType != 'status') ? `
-      ${dateHeader}
-
-      WITH [base_alarm] AS (
-        SELECT
-          [mc_no],
-          [occurred],
-          [alarm],
-          CASE WHEN RIGHT([alarm], 1) = '_' THEN LEFT([alarm], LEN([alarm]) - 1) ELSE [alarm] END AS [alarm_base],
-          CASE WHEN RIGHT([alarm], 1) = '_' THEN 'after' ELSE 'before' END AS [alarm_type]
-        FROM ${alarmTable}
-        WHERE [occurred] BETWEEN @start_date_p1 AND @end_date_p1
-          AND ${alarmFilter}
-      ),
-      [with_pairing] AS (
-        SELECT *,
-          ISNULL(LEAD([occurred]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]), @end_date) AS [occurred_next],
-          ISNULL(LEAD([alarm_type]) OVER (PARTITION BY [mc_no], [alarm_base] ORDER BY [occurred]), 'after') AS [next_type]
-        FROM [base_alarm]
-      ),
-      [paired_alarms] AS (
-        SELECT
-          [mc_no],
-          [alarm_base],
-          CASE WHEN [occurred] < @start_date THEN @start_date ELSE [occurred] END AS [occurred_start],
-          CASE WHEN [occurred_next] > @end_date THEN @end_date ELSE [occurred_next] END AS [occurred_end]
-        FROM [with_pairing]
-        WHERE [alarm_type] = 'before' AND [next_type] = 'after'
-      ),
-      [filter_time] AS (
-        SELECT *, DATEDIFF(SECOND, [occurred_start], [occurred_end]) AS [duration_seconds]
-        FROM [paired_alarms]
-        WHERE [occurred_end] > [occurred_start]
-      )
-      ${finalSelect}
-  ` : `
-    ${dateHeader}
     WITH [base_alarm] AS (
       SELECT
         [mc_no],
@@ -147,12 +60,15 @@ const buildRunningTimeSql = ({ alarmTable, startHour, startMinute = 0, mode, dat
     )
     SELECT
       [mc_no],
-      [mc_status],
-      CASE WHEN [mc_status] = 'run' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
-      CASE WHEN [mc_status] = 'plan stop' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
+      CASE WHEN [mc_status] like 'run%' THEN LEFT([mc_status],3) 
+        WHEN [mc_status] like 'plan stop%' THEN LEFT([mc_status],9)
+        ELSE [mc_status] 
+      END AS [mc_status],
+      CASE WHEN [mc_status] like 'run%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_duration],
+      CASE WHEN [mc_status] like 'plan stop%' THEN SUM([duration_seconds]) ELSE 0 END AS [sum_planstop_duration],
       DATEDIFF(SECOND, @start_date, @end_date) AS [total_time]
     FROM [filter_time]
-    WHERE [mc_status] = 'run' OR [mc_status] = 'plan stop'
+    WHERE [mc_status] like 'run%' OR [mc_status] like 'plan stop%'
     GROUP BY [mc_no], [mc_status]
   `
 

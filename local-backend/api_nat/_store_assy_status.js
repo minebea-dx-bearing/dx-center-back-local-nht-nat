@@ -26,9 +26,10 @@ const startHour = 6;
 const stores = new Map();
 
 const buildStore = (processName) => {
-  const DATABASE_PROD = `[nat_mc_assy_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
-  const DATABASE_STATUS = `[nat_mc_assy_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
-  const DATABASE_MASTER = `[nat_mc_assy_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
+  const ant_db = (processName === "ANT") ? "_new" : "";
+  const DATABASE_PROD = `[nat_mc_assy_${processName.toLowerCase()}${ant_db}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
+  const DATABASE_STATUS = `[nat_mc_assy_${processName.toLowerCase()}${ant_db}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
+  const DATABASE_MASTER = `[nat_mc_assy_${processName.toLowerCase()}${ant_db}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
   const hub = getHub(`mqtt://${process.env.NAT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
 
@@ -43,7 +44,7 @@ const buildStore = (processName) => {
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStop", dataType:"status" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },

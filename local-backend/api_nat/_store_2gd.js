@@ -32,7 +32,6 @@ const startHour = 7; // reset at 7 o'clock
 const DATABASE_PROD = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_PRODUCTION_${processName.toUpperCase()}]`;
 const DATABASE_STATUS = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MCSTATUS_${processName.toUpperCase()}]`;
 const DATABASE_MASTER = `[nat_mc_mcshop_${processName.toLowerCase()}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
-let mc_type = 'IR';
 
 const hub = getHub(`mqtt://${process.env.NAT_MQTT_MC_SHOP}:${process.env.MQTT_PORT}`);
 
@@ -47,7 +46,7 @@ const runningTimeCache = createRunningTimeCache({
     ttlMs: 20_000,
     keyFn: () => `NAT-${processName}-${shiftStartDate(moment(), startHour)}`,
     loader: async () => {
-      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour, mode: "withPlanStop", dataType:"status" });
+      const sql = buildRunningTimeSql({ alarmTable: DATABASE_STATUS, startHour });
       const result = await dbms.query(sql);
       return result[1] > 0 ? result[0] : [];
     },
