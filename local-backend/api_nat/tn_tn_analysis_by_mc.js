@@ -8,6 +8,13 @@ const DATABASE_STATUS = "[nat_mc_mcshop_tn].[dbo].[DATA_MCSTATUS_TN]";
 const DATABASE_IOT = "[nat_mc_mcshop_tn].[dbo].[MONITOR_IOT]";
 const DATABASE_MASTER = "[nat_mc_mcshop_tn].[dbo].[DATA_MASTER_TN]";
 
+
+/* Interpolated into SQL as operands — keep them self-contained so callers
+never have to guess whether they need parens.
+  const COLUMN_OK = "([prod_pos4] + [prod_pos6])";
+  const COLUMN_NG = "(0)"; 
+*/
+
 const COLUMN_OK = "[prod_pos4] + [prod_pos6]";
 const COLUMN_NG = "0";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
@@ -776,41 +783,6 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
       WHERE ('${date}' BETWEEN date_regis AND next_regis) OR ('${date}' >= date_regis AND next_regis IS NULL)
       ORDER BY registered ASC
   `);
-  console.log(`
-      WITH [data] As (
-        SELECT 
-          p.[registered],
-          CONVERT(varchar, p.[registered], 8) AS TIME,
-          [mc_no],
-          ${COLUMN_TOTAL} AS prod_total,
-          ${COLUMN_OK} AS prod_ok,
-          ${COLUMN_NG} AS prod_ng,
-          FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') AS [mfg_date],
-          FORMAT(p.registered, 'HH:mm') AS cat_time
-        FROM ${DATABASE_PROD} p
-        WHERE p.mc_no = '${mc_no}'
-        AND FORMAT(IIF(DATEPART(HOUR, p.[registered]) < 8, DATEADD(DAY, -1, p.[registered]), p.[registered]), 'yyyy-MM-dd') = '${date}'
-      ),
-      [master] AS (
-        SELECT *,
-          CAST([registered] AS date) AS date_regis,
-          LEAD(CAST([registered] AS date)) OVER (ORDER BY [registered]) AS next_regis
-        FROM ${DATABASE_MASTER}
-        WHERE mc_no = '${mc_no}'
-      )
-      SELECT 
-        d.*,
-          [part_no],
-          [target_ct],
-          [target_utl],
-          [target_yield],
-          [target_special],
-          [ring_factor]
-      FROM [data] d
-      INNER JOIN [master] m ON d.[mc_no] = m.[mc_no]
-      WHERE ('${date}' BETWEEN date_regis AND next_regis) OR ('${date}' >= date_regis AND next_regis IS NULL)
-      ORDER BY registered ASC
-    `)
 
   const result = calculateShifts(data[0], date);
   res.json({ success: true, data: result });
