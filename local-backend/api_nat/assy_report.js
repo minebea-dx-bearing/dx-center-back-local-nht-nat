@@ -199,13 +199,11 @@ SET @sql = N'
 WITH [base] AS (
     SELECT 
         [registered]
-        , CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 
+        , CASE WHEN DATEPART(HOUR, [registered]) = 6 
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date]
-        , CASE
-            WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
+        , CASE WHEN DATEPART(HOUR, [registered]) = 6 THEN ''N''
             ELSE ''M''
         END AS [shift]
         , UPPER([mc_no]) AS [mc_no]
@@ -215,16 +213,9 @@ WITH [base] AS (
         , [d2_ng] as [retainer_ng]
     FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
-	AND ((
-		mc_no <> ''mbr01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''mbr01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''mbr01'' ) OR (mc_no = ''mbr01'' AND [registered] < ''2026-08-27 07:00''))
 ),
 [calc] AS (
     SELECT
@@ -255,34 +246,50 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-        CONVERT(date, [registered]) AS [work_date]
+		CONVERT(date, [registered]) AS [work_date]
         , ''M'' AS [shift]
         , UPPER([mc_no]) AS [mc_no]
         , [shift_m_pallet_ball_ng] as [pallet_ng]
         , [shift_m_prod_ok] as [retainer_ok]
         , [shift_m_ball_ng] as [turn_table_ng]
         , [shift_m_rtnr_ng] as [retainer_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_prod_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+	AND [registered] >= ''2026-08-27''
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	AND mc_no = ''mbr01''
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+		CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
         , ''N'' AS [shift]
         , UPPER([mc_no]) AS [mc_no]
         , [shift_n_pallet_ball_ng] as [pallet_ng]
         , [shift_n_prod_ok] as [retainer_ok]
         , [shift_n_ball_ng] as [turn_table_ng]
         , [shift_n_rtnr_ng] as [retainer_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_prod_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+	AND [registered] >= ''2026-08-28''
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
 	AND mc_no = ''mbr01''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [pallet_ng]
+        , [retainer_ok]
+        , [turn_table_ng]
+        , [retainer_ng]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -293,7 +300,7 @@ WITH [base] AS (
         CONVERT(varchar(10), [work_date], 23) AS [work_date],
         [title],
         [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
             (''Ball NG (Pallet)'', [pallet_ng])
@@ -367,13 +374,11 @@ SET @sql = N'
 WITH [base] AS (
     SELECT 
         [registered],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) <= 6 
+        CASE WHEN DATEPART(HOUR, [registered]) <= 6 
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) >= 19 OR DATEPART(HOUR, [registered]) < 7 THEN ''N''
+        CASE WHEN DATEPART(HOUR, [registered]) >= 19 OR DATEPART(HOUR, [registered]) < 7 THEN ''N''
             ELSE ''M''
         END AS [shift],
         UPPER([mc_no]) AS [mc_no],
@@ -382,16 +387,9 @@ WITH [base] AS (
         [ng_neg]
     FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
-	AND ((
-		mc_no <> ''arp01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''arp01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''arp01'' ) OR (mc_no = ''arp01'' AND [registered] < ''2026-08-27 07:00''))
 ),
 [calc] AS (
     SELECT
@@ -417,32 +415,47 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-        CONVERT(date, [registered]) AS [work_date],
-        ''M'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_m_prod_ok] AS [daily_ok],
-        [shift_m_prod_ng_pos] AS [ng_pos],
-        [shift_m_prod_ng_neg] AS [ng_neg]
+		CONVERT(date, [registered]) AS [work_date]
+        , ''M'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_m_prod_ok] AS [daily_ok]
+        , [shift_m_prod_ng_pos] AS [ng_pos]
+        , [shift_m_prod_ng_neg] AS [ng_neg]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_prod_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+	AND [registered] >= ''2026-08-27''
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	AND mc_no = ''arp01''
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        ''N'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_n_prod_ok] AS [daily_ok],
-        [shift_n_prod_ng_pos] AS [ng_pos],
-        [shift_n_prod_ng_neg] AS [ng_neg]
+        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+        , ''N'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_n_prod_ok] AS [daily_ok]
+        , [shift_n_prod_ng_pos] AS [ng_pos]
+        , [shift_n_prod_ng_neg] AS [ng_neg]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_prod_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+	AND [registered] >= ''2026-08-28''
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
 	AND mc_no = ''arp01''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [daily_ok]
+        , [ng_pos]
+        , [ng_neg]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -453,7 +466,7 @@ WITH [base] AS (
         CONVERT(varchar(10), [work_date], 23) AS [work_date],
         [title],
         [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
             (''RP OK'', [daily_ok]),
@@ -525,13 +538,11 @@ SET @sql = N'
 WITH [base] AS (
     SELECT 
         [registered],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) <= 6 
+        CASE WHEN DATEPART(HOUR, [registered]) <= 6 
                 THEN CONVERT(date, DATEADD(DAY, -1, [registered]))
             ELSE CONVERT(date, [registered])
         END AS [work_date],
-        CASE
-            WHEN DATEPART(HOUR, [registered]) >= 19 OR DATEPART(HOUR, [registered]) < 7 THEN ''N''
+        CASE WHEN DATEPART(HOUR, [registered]) >= 19 OR DATEPART(HOUR, [registered]) < 7 THEN ''N''
             ELSE ''M''
         END AS [shift],
         UPPER([mc_no]) AS [mc_no],
@@ -545,16 +556,9 @@ WITH [base] AS (
         [snap_b_ng] as [snap_b_ng]
     FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
-	AND ((
-		mc_no <> ''gssm01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''gssm01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''gssm01'' ) OR (mc_no = ''gssm01'' AND [registered] < ''2026-08-27 07:00''))
 ),
 [calc] AS (
     SELECT
@@ -605,42 +609,62 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-        CONVERT(date, [registered]) AS [work_date],
-        ''M'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_m_grease_ok] as [total_grease],
-        [shift_m_ng_ro1] as [ro1],
-        [shift_m_ng_ro2] as [ro2],
-        [shift_m_shield_ok] as [shield_ok],
-        [shift_m_shield_ng_a] as [shield_a_ng],
-        [shift_m_shield_ng_b] as [shield_b_ng],
-        [shift_m_snap_ng_a] as [snap_a_ng],
-        [shift_m_snap_ng_b] as [snap_b_ng]
+		 CONVERT(date, [registered]) AS [work_date]
+        , ''M'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_m_grease_ok] as [total_grease]
+        , [shift_m_ng_ro1] as [ro1]
+        , [shift_m_ng_ro2] as [ro2]
+        , [shift_m_shield_ok] as [shield_ok]
+        , [shift_m_shield_ng_a] as [shield_a_ng]
+        , [shift_m_shield_ng_b] as [shield_b_ng]
+        , [shift_m_snap_ng_a] as [snap_a_ng]
+        , [shift_m_snap_ng_b] as [snap_b_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_grease_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	AND mc_no = ''gssm01''
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        ''N'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_n_grease_ok] as [total_grease],
-        [shift_n_ng_ro1] as [ro1],
-        [shift_n_ng_ro2] as [ro2],
-        [shift_n_shield_ok] as [shield_ok],
-        [shift_n_shield_ng_a] as [shield_a_ng],
-        [shift_n_shield_ng_b] as [shield_b_ng],
-        [shift_n_snap_ng_a] as [snap_a_ng],
-        [shift_n_snap_ng_b] as [snap_b_ng]
+        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+        , ''N'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_n_grease_ok] as [total_grease]
+        , [shift_n_ng_ro1] as [ro1]
+        , [shift_n_ng_ro2] as [ro2]
+        , [shift_n_shield_ok] as [shield_ok]
+        , [shift_n_shield_ng_a] as [shield_a_ng]
+        , [shift_n_shield_ng_b] as [shield_b_ng]
+        , [shift_n_snap_ng_a] as [snap_a_ng]
+        , [shift_n_snap_ng_b] as [snap_b_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_grease_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
 	AND mc_no = ''gssm01''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [total_grease]
+        , [ro1]
+        , [ro2]
+        , [shield_ok]
+        , [shield_a_ng]
+        , [shield_b_ng]
+        , [snap_a_ng]
+        , [snap_b_ng]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -651,7 +675,7 @@ WITH [base] AS (
         , CONVERT(varchar(10), [work_date], 23) AS [work_date]
         , [title]
         , [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
              (''Total Grease'', [total_grease])
@@ -752,7 +776,7 @@ WITH [base] AS (
     FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
 	AND [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
+	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-08-27 07:00''
 ),
 [calc] AS (
@@ -803,11 +827,13 @@ WITH [base] AS (
         , [shift_m_width_ng] as [width_ng]
         , [shift_m_chamfer_ng] as [chamfer_ng]
         , [shift_m_mix_ng] as [mix_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_fim_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	UNION ALL
 	SELECT 
         CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
@@ -819,11 +845,27 @@ WITH [base] AS (
         , [shift_n_width_ng] as [width_ng]
         , [shift_n_chamfer_ng] as [chamfer_ng]
         , [shift_n_mix_ng] as [mix_ng]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_fim_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [fim_ok]
+		, [id_ng]
+		, [od_ng]
+		, [width_ng]
+		, [chamfer_ng]
+		, [mix_ng]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -834,7 +876,7 @@ WITH [base] AS (
         , CONVERT(varchar(10), [work_date], 23) AS [work_date]
         , [title]
         , [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
              (''FIM OK'', [fim_ok])
@@ -959,34 +1001,50 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-		CONVERT(date, [registered]) AS [work_date],
-        ''M'' AS [shift],
-        IIF(CONVERT(date, [registered]) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no],
-        [front_shift_m_tt_ok] AS [ok_front],
-        [front_shift_m_tt_ag] AS [ag_front],
-        [front_shift_m_tt_ng] AS [ng_front],
-        [front_shift_m_mix_ball] AS [mixball_front]
+		CONVERT(date, [registered]) AS [work_date]
+        , ''M'' AS [shift]
+        , IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no]
+        , [front_shift_m_tt_ok] AS [ok_front]
+        , [front_shift_m_tt_ag] AS [ag_front]
+        , [front_shift_m_tt_ng] AS [ng_front]
+        , [front_shift_m_mix_ball] AS [mixball_front]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [front_shift_m_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-02''
-    AND DATEPART(HOUR, [registered]) = 19
-	AND ((CONVERT(date, [registered]) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
+	AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        ''N'' AS [shift],
-        IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no],
-        [front_shift_n_tt_ok] AS [ok_front],
-        [front_shift_n_tt_ag] AS [ag_front],
-        [front_shift_n_tt_ng] AS [ng_front],
-        [front_shift_n_mix_ball] AS [mixball_front]
+        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+        , ''N'' AS [shift]
+        , IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no]
+        , [front_shift_n_tt_ok] AS [ok_front]
+        , [front_shift_n_tt_ag] AS [ag_front]
+        , [front_shift_n_tt_ng] AS [ng_front]
+        , [front_shift_n_mix_ball] AS [mixball_front]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [front_shift_n_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+	AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [ok_front]
+        , [ag_front]
+        , [ng_front]
+        , [mixball_front]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -997,7 +1055,7 @@ WITH [base] AS (
         CONVERT(varchar(10), [work_date], 23) AS [work_date],
         [title],
         [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
             (''Noise OK'', [ok_front]),
@@ -1118,34 +1176,50 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-		CONVERT(date, [registered]) AS [work_date],
-        ''M'' AS [shift],
-        IIF(CONVERT(date, [registered]) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no],
-        [rear_shift_m_tt_ok] AS [ok_rear],
-        [rear_shift_m_tt_ag] AS [ag_rear],
-        [rear_shift_m_tt_ng] AS [ng_rear],
-        [rear_shift_m_mix_ball] AS [mixball_rear]
+		CONVERT(date, [registered]) AS [work_date]
+        , ''M'' AS [shift]
+        , IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no]
+        , [rear_shift_m_tt_ok] AS [ok_rear]
+        , [rear_shift_m_tt_ag] AS [ag_rear]
+        , [rear_shift_m_tt_ng] AS [ng_rear]
+        , [rear_shift_m_mix_ball] AS [mixball_rear]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [rear_shift_m_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-02''
-    AND DATEPART(HOUR, [registered]) = 19
-	AND ((CONVERT(date, [registered]) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
+	AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        ''N'' AS [shift],
-        IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no],
-        [rear_shift_n_tt_ok] AS [ok_rear],
-        [rear_shift_n_tt_ag] AS [ag_rear],
-        [rear_shift_n_tt_ng] AS [ng_rear],
-        [rear_shift_n_mix_ball] AS [mixball_rear]
+        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+        , ''N'' AS [shift]
+        , IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no]
+        , [rear_shift_n_tt_ok] AS [ok_rear]
+        , [rear_shift_n_tt_ag] AS [ag_rear]
+        , [rear_shift_n_tt_ng] AS [ng_rear]
+        , [rear_shift_n_mix_ball] AS [mixball_rear]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [rear_shift_n_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+	AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [ok_rear]
+        , [ag_rear]
+        , [ng_rear]
+        , [mixball_rear]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1156,7 +1230,7 @@ WITH [base] AS (
         CONVERT(varchar(10), [work_date], 23) AS [work_date],
         [title],
         [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
             (''Noise OK'', [ok_rear]),
@@ -1242,9 +1316,9 @@ WITH [base] AS (
         , [daily_ag] as [daily_ag]
     FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
-	AND  [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-    AND [registered] < ''2026-09-02 07:00''
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
+	AND [registered] < ''2026-09-02 07:00''
 ),
 [calc] AS (
     SELECT
@@ -1265,28 +1339,42 @@ WITH [base] AS (
 ),
 [newData] AS (
 	SELECT
-		 CONVERT(date, [registered]) AS [work_date],
-        ''M'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_m_ok] as [daily_ok],
-        [shift_m_ag] as [daily_ag]
+		CONVERT(date, [registered]) AS [work_date]
+        , ''M'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_m_ok] as [daily_ok]
+        , [shift_m_ag] as [daily_ag]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-02''
-    AND DATEPART(HOUR, [registered]) = 19
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	UNION ALL
 	SELECT 
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        ''N'' AS [shift],
-        UPPER([mc_no]) AS [mc_no],
-        [shift_n_ok] as [daily_ok],
-        [shift_n_ag] as [daily_ag]
+        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+        , ''N'' AS [shift]
+        , UPPER([mc_no]) AS [mc_no]
+        , [shift_n_ok] as [daily_ok]
+        , [shift_n_ag] as [daily_ag]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [daily_ok]
+        , [daily_ag]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1297,7 +1385,7 @@ WITH [base] AS (
         , CONVERT(varchar(10), [work_date], 23) AS [work_date]
         , [title]
         , [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
              (''Auto OD OK'', [daily_ok])
@@ -1382,16 +1470,9 @@ WITH [base] AS (
 		, [daily_ag2] as [daily_ag2]
     FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
 	WHERE DATEPART(HOUR, [registered]) IN (6,18)
-    AND ((
-		mc_no <> ''avs01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''avs01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND ((mc_no <> ''avs01'' ) OR (mc_no = ''avs01'' AND [registered] < ''2026-08-27 07:00''))
 ),
 [calc] AS (
     SELECT
@@ -1423,11 +1504,13 @@ WITH [base] AS (
         , [shift_m_tt_ok] as [daily_ok]
         , [shift_m_tt_ag1] as [daily_ag1]
 		, [shift_m_tt_ag2] as [daily_ag2]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	AND mc_no = ''avs01''
 	UNION ALL
 	SELECT 
@@ -1437,12 +1520,25 @@ WITH [base] AS (
         , [shift_n_tt_ok] as [daily_ok]
         , [shift_n_tt_ag1] as [daily_ag1]
 		, [shift_n_tt_ag2] as [daily_ag2]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_tt_ok] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
 	AND mc_no = ''avs01''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [daily_ok]
+        , [daily_ag1]
+        , [daily_ag2]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1453,7 +1549,7 @@ WITH [base] AS (
         , CONVERT(varchar(10), [work_date], 23) AS [work_date]
         , [title]
         , [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
              (''Auto Visual OK'', [daily_ok])
@@ -1538,16 +1634,9 @@ WITH [base] AS (
         , [prod_cnt] as [daily_ok]
     FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
     WHERE DATEPART(HOUR, [registered]) IN (6,18)
-    AND ((
-		mc_no <> ''alu01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''alu01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND ((mc_no <> ''alu01'' ) OR (mc_no = ''alu01'' AND [registered] < ''2026-08-27 07:00''))
 ),
 [calc] AS (
     SELECT
@@ -1567,11 +1656,13 @@ WITH [base] AS (
         , ''M'' AS [shift]
         , UPPER([mc_no]) AS [mc_no]
         , [shift_m_tt_prod_cnt_pcs] as [daily_ok]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_m_tt_prod_cnt_pcs] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-27''
-    AND DATEPART(HOUR, [registered]) = 19
+    AND CAST([registered] AS TIME) BETWEEN ''19:00:00'' AND ''23:59:59''
 	AND mc_no = ''alu01''
 	UNION ALL
 	SELECT 
@@ -1579,12 +1670,23 @@ WITH [base] AS (
         , ''N'' AS [shift]
         , UPPER([mc_no]) AS [mc_no]
         , [shift_n_tt_prod_cnt_pcs] as [daily_ok]
+		, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
     FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
+    WHERE [shift_n_tt_prod_cnt_pcs] <> 0
+	AND [registered] >= DATEADD(DAY,-1,@Month)
     AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+    AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
 	AND mc_no = ''alu01''
+),
+[merge] AS (
+	SELECT 
+		[work_date]
+		, [shift]
+		, [mc_no]
+		, [daily_ok]
+	FROM [newData]
+	WHERE rn = 1
 	UNION ALL
 	SELECT * FROM [calc]
 ),
@@ -1595,7 +1697,7 @@ WITH [base] AS (
         , CONVERT(varchar(10), [work_date], 23) AS [work_date]
         , [title]
         , [value]
-    FROM [newData]
+    FROM [merge]
     CROSS APPLY (
         VALUES
              (''Packing'', [daily_ok])
@@ -1667,7 +1769,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [mbrf] AS (
     SELECT 
         [registered]
@@ -1691,33 +1793,32 @@ WITH [mbrf] AS (
         , ([ball_q] + [sep_ng_2]) AS [turn_table_ng]
         , [d2_ng] AS [retainer_ng]
     FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
-    WHERE DATEPART(HOUR, [registered]) IN (6)
-	AND ((
-		mc_no <> ''mbr01'' 
+    WHERE DATEPART(HOUR, [registered]) IN (6,18)
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''mbr01'' ) OR (mc_no = ''mbr01'' AND [registered] < ''2026-08-27 07:00''))
+	UNION ALL
+	SELECT [registered], [process], [work_date], [mc_no], [pallet_ng], [daily_ok], [turn_table_ng], [retainer_ng] 
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			, CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			, [mc_no]
+			, [daily_tt_pallet_ball_ng] as [pallet_ng]
+			, [daily_tt_prod_ok] as [daily_ok]
+			, [daily_tt_ball_ng] as [turn_table_ng]
+			, [daily_tt_rtnr_ng] as [retainer_ng]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
+		WHERE [daily_tt_prod_ok] <> 0
 		AND [registered] >= DATEADD(DAY,-1,@Month)
 		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''mbr01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-        AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
-	UNION ALL
-	SELECT 
-		[registered]
-		,[process]
-		, CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        , [mc_no]
-        , [daily_tt_pallet_ball_ng] as [pallet_ng]
-        , [daily_tt_prod_ok] as [daily_ok]
-        , [daily_tt_ball_ng] as [turn_table_ng]
-        , [daily_tt_rtnr_ng] as [retainer_ng]
-    FROM [nat_mc_assy_mbr].[dbo].[DATA_PRODUCTION_MBR]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND mc_no = ''mbr01''
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND mc_no = ''mbr01''
+	) AS mbrNew
+	WHERE mbrNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -1865,7 +1966,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_arp].[dbo].[DATA_MASTER_ARP]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [arp] AS (
     SELECT 
         [registered]
@@ -1876,30 +1977,29 @@ WITH [arp] AS (
         ,([daily_ok] + [ng_pos] + [ng_neg]) AS [total_prod]
     FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
     WHERE DATEPART(HOUR, [registered]) IN (6)
-	AND ((
-		mc_no <> ''arp01'' 
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''arp01'' ) OR (mc_no = ''arp01'' AND [registered] < ''2026-08-27 07:00''))
+	UNION ALL
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered],
+			[process],
+			CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
+			[mc_no],
+			[daily_tt_prod_ok] AS [daily_ok],
+			([daily_tt_prod_ok] + [daily_tt_prod_ng_pos] + [daily_tt_prod_ng_neg]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
+		WHERE [daily_tt_prod_ok] <> 0
 		AND [registered] >= DATEADD(DAY,-1,@Month)
 		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''arp01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
-	UNION ALL
-	SELECT 
-		[registered],
-		[process],
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        [mc_no],
-        [daily_tt_prod_ok] AS [daily_ok],
-		([daily_tt_prod_ok] + [daily_tt_prod_ng_pos] + [daily_tt_prod_ng_neg]) AS [total_prod]
-    FROM [nat_mc_assy_arp].[dbo].[DATA_PRODUCTION_ARP]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND mc_no = ''arp01''
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND mc_no = ''arp01''
+	) AS arpNew
+	WHERE arpNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2043,7 +2143,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_gssm].[dbo].[DATA_MASTER_GSSM]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [gssm] AS (
     SELECT 
         [registered]
@@ -2055,31 +2155,30 @@ WITH [gssm] AS (
         ,([shield_ok] + [shield_a_ng] + [shield_b_ng] + [snap_a_ng] + [snap_b_ng]) AS [total_prod]
     FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
     WHERE DATEPART(HOUR, [registered]) IN (6)
-	AND ((
-		mc_no <> ''gssm01'' 
+	AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+	AND ((mc_no <> ''gssm01'' ) OR (mc_no = ''gssm01'' AND [registered] < ''2026-08-27 07:00''))
+	UNION ALL
+	SELECT [registered], [process], [work_date], [mc_no], [prod_utl], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered],
+			[process],
+			CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
+			[mc_no],
+			[daily_tt_grease_ok] AS [prod_utl],
+			[daily_tt_shield_ok] AS [daily_ok],
+			([daily_tt_shield_ok] + [daily_tt_shield_ng_a] + [daily_tt_shield_ng_b] + [daily_tt_snap_ng_a] + [daily_tt_snap_ng_b]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
+		WHERE [daily_tt_grease_ok] <> 0
 		AND [registered] >= DATEADD(DAY,-1,@Month)
 		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''gssm01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
-	UNION ALL
-	SELECT 
-		[registered],
-		[process],
-        CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date],
-        [mc_no],
-		[daily_tt_grease_ok] AS [prod_utl],
-		[daily_tt_shield_ok] AS [daily_ok],
-		([daily_tt_shield_ok] + [daily_tt_shield_ng_a] + [daily_tt_shield_ng_b] + [daily_tt_snap_ng_a] + [daily_tt_snap_ng_b]) AS [total_prod]
-    FROM [nat_mc_assy_gssm].[dbo].[DATA_PRODUCTION_GSSM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND mc_no = ''gssm01''
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND mc_no = ''gssm01''
+	) AS gssmNew
+	WHERE gssmNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2225,7 +2324,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_fim].[dbo].[DATA_MASTER_FIM]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [fim] AS (
     SELECT 
         [registered]
@@ -2240,18 +2339,24 @@ WITH [fim] AS (
 	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
 	AND [registered] < ''2026-08-27 07:00''
 	UNION ALL
-	SELECT 
-		[registered]
-		, [process]
-        , CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        , [mc_no]
-        , [daily_tt_fim_ok] as [daily_ok]
-        , ([daily_tt_fim_ok] + [daily_tt_id_ng] + [daily_tt_od_ng] + [daily_tt_width_ng] + [daily_tt_chamfer_ng] + [daily_tt_mix_ng]) as [total_prod]
-    FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-    AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			, [process]
+			, CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			, [mc_no]
+			, [daily_tt_fim_ok] as [daily_ok]
+			, ([daily_tt_fim_ok] + [daily_tt_id_ng] + [daily_tt_od_ng] + [daily_tt_width_ng] + [daily_tt_chamfer_ng] + [daily_tt_mix_ng]) as [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_fim].[dbo].[DATA_PRODUCTION_FIM]
+		WHERE [daily_tt_fim_ok] <> 0
+		AND [registered] >= DATEADD(DAY,-1,@Month)
+		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+	) AS fimNew
+	WHERE fimNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2410,19 +2515,25 @@ WITH [antr] AS (
 	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-09-02 07:00''
 	UNION ALL
-	SELECT 
-        [registered]
-		,[process]
-        ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2) ,[mc_no]) AS [mc_no]
-        ,[rear_daily_tt_ok] AS [daily_ok]
-        ,([rear_daily_tt_ok] + [rear_daily_tt_ag] + [rear_daily_tt_ng] + [rear_daily_tt_mix_ball]) AS [total_prod]
-    FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			, IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), CONVERT(INT, RIGHT([mc_no], 2)) + (CONVERT(INT, RIGHT([mc_no], 2)) - 1)),2)), UPPER([mc_no])) AS [mc_no]
+			,[rear_daily_tt_ok] AS [daily_ok]
+			,([rear_daily_tt_ok] + [rear_daily_tt_ag] + [rear_daily_tt_ng] + [rear_daily_tt_mix_ball]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
+		WHERE [rear_daily_tt_ok] <> 0
+		AND [registered] >= DATEADD(DAY,-1,@Month)
+		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+		AND [registered] >= ''2026-09-03''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 1))
+	) AS antrNew
+	WHERE antrNew.rn = 1
 ),
 [antf] AS (
     SELECT 
@@ -2438,19 +2549,25 @@ WITH [antr] AS (
 	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-09-02 07:00''
 	UNION ALL
-	SELECT 
-        [registered]
-		,[process]
-        ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,IIF(CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'', LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2), [mc_no]) AS [mc_no]
-        ,[front_daily_tt_ok] AS [daily_ok]
-        ,([front_daily_tt_ok] + [front_daily_tt_ag] + [front_daily_tt_ng] + [front_daily_tt_mix_ball]) AS [total_prod]
-    FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND ((CONVERT(date, DATEADD(DAY, -1, [registered])) < ''2026-09-08'') OR (CONVERT(date, [registered]) >= ''2026-09-08'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			, IIF([registered] < ''2026-09-08 11:00'', UPPER(LEFT([mc_no], 3) + RIGHT(''0'' + CONVERT(VARCHAR(10), (CONVERT(INT, RIGHT([mc_no], 2)) * 2)),2)), UPPER([mc_no])) AS [mc_no]
+			,[front_daily_tt_ok] AS [daily_ok]
+			,([front_daily_tt_ok] + [front_daily_tt_ag] + [front_daily_tt_ng] + [front_daily_tt_mix_ball]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_ant_new].[dbo].[DATA_PRODUCTION_ANT]
+		WHERE [front_daily_tt_ok] <> 0
+		AND [registered] >= DATEADD(DAY,-1,@Month)
+		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+		AND [registered] >= ''2026-09-03''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND (([registered] < ''2026-09-08 11:00'') OR ([registered] >= ''2026-09-08 11:00'' AND TRY_CAST(RIGHT([mc_no], 1) AS INT) % 2 = 0))
+	) AS antfNew
+	WHERE antfNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2609,7 +2726,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_aod].[dbo].[DATA_MASTER_AOD]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [aod] AS (
     SELECT 
         [registered]
@@ -2624,18 +2741,24 @@ WITH [aod] AS (
 	AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
 	AND [registered] < ''2026-09-02 07:00''
 	UNION ALL
-	SELECT 
-        [registered]
-		,[process]
-        ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,[mc_no]
-        ,[daily_tt_ok] as [daily_ok]
-        ,([daily_tt_ok] + [daily_tt_ag]) AS [total_prod]
-    FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-09-03''
-    AND DATEPART(HOUR, [registered]) = 7
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			,[mc_no]
+			,[daily_tt_ok] as [daily_ok]
+			,([daily_tt_ok] + [daily_tt_ag]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_aod].[dbo].[DATA_PRODUCTION_AOD]
+		WHERE [daily_tt_ok] <> 0
+		AND [registered] >= DATEADD(DAY,-1,@Month)
+		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+		AND [registered] >= ''2026-09-03''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+	) AS aodNew
+	WHERE aodNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2779,7 +2902,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_avs].[dbo].[DATA_MASTER_AVS]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [avs] AS (
     SELECT 
         [registered]
@@ -2790,30 +2913,29 @@ WITH [avs] AS (
         ,([daily_ok] + [daily_ag1] + [daily_ag2]) AS [total_prod]
     FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
     WHERE DATEPART(HOUR, [registered]) IN (6)
-    AND ((
-		mc_no <> ''avs01'' 
+    AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND ((mc_no <> ''avs01'' ) OR (mc_no = ''avs01'' AND [registered] < ''2026-08-27 07:00''))
+	UNION ALL
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			,[mc_no]
+			,[daily_tt_ok] as [daily_ok]
+			,([daily_tt_ok] + [daily_tt_ag1] + [daily_tt_ag2]) AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
+		WHERE [daily_tt_ok] <> 0
 		AND [registered] >= DATEADD(DAY,-1,@Month)
 		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''avs01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
-	UNION ALL
-	SELECT 
-        [registered]
-		,[process]
-        ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,[mc_no]
-        ,[daily_tt_ok] as [daily_ok]
-        ,([daily_tt_ok] + [daily_tt_ag1] + [daily_tt_ag2]) AS [total_prod]
-    FROM [nat_mc_assy_avs].[dbo].[DATA_PRODUCTION_AVS]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND mc_no = ''avs01''
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND mc_no = ''avs01''
+	) AS avsNew
+	WHERE avsNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
@@ -2957,7 +3079,7 @@ SELECT TOP 1 @NearestMonth = DATEFROMPARTS(YEAR([registered]), MONTH([registered
 FROM [nat_mc_assy_alu].[dbo].[DATA_MASTER_ALU]
 ORDER BY ABS(DATEDIFF(MONTH, [registered], @Month)) ASC;
 
-SET @sql = '
+SET @sql = N'
 WITH [alu] AS (
     SELECT 
         [registered]
@@ -2968,30 +3090,29 @@ WITH [alu] AS (
         ,[prod_cnt] AS [total_prod]
     FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
     WHERE DATEPART(HOUR, [registered]) IN (6)
-    AND ((
-		mc_no <> ''alu01'' 
+    AND [registered] >= DATEADD(DAY,-1,@Month)
+	AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
+    AND ((mc_no <> ''alu01'' ) OR (mc_no = ''alu01'' AND [registered] < ''2026-08-27 07:00''))
+	UNION ALL
+	SELECT [registered], [process], [work_date], [mc_no], [daily_ok], [total_prod]
+	FROM (
+		SELECT 
+			[registered]
+			,[process]
+			,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
+			,[mc_no]
+			,[daily_tt_prod_cnt_pcs] as [daily_ok]
+			,[daily_tt_prod_cnt_pcs] AS [total_prod]
+			, ROW_NUMBER() OVER (PARTITION BY [mc_no], CAST([registered] AS DATE) ORDER BY [registered] ASC) AS [rn]
+		FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
+		WHERE [daily_tt_prod_cnt_pcs] <> 0
 		AND [registered] >= DATEADD(DAY,-1,@Month)
 		AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	) OR (
-		mc_no = ''alu01'' 
-		AND [registered] >= DATEADD(DAY,-1,@Month)
-		AND [registered] < DATEADD(DAY, 2, EOMONTH(@Month))
-		AND [registered] < ''2026-08-27 07:00''
-	))
-	UNION ALL
-	SELECT 
-        [registered]
-		,[process]
-        ,CONVERT(date, DATEADD(DAY, -1, [registered])) AS [work_date]
-        ,[mc_no]
-        ,[daily_tt_prod_cnt_pcs] as [daily_ok]
-		,[daily_tt_prod_cnt_pcs] AS [total_prod]
-    FROM [nat_mc_assy_alu].[dbo].[DATA_PRODUCTION_ALU]
-    WHERE [registered] >= DATEADD(DAY,-1,@Month)
-    AND [registered] < DATEADD(DAY,2,EOMONTH(@Month))
-	AND [registered] >= ''2026-08-28''
-    AND DATEPART(HOUR, [registered]) = 7
-	AND mc_no = ''alu01''
+		AND [registered] >= ''2026-08-28''
+		AND CAST([registered] AS TIME) BETWEEN ''07:00:00'' AND ''11:59:59''
+		AND mc_no = ''alu01''
+	) AS aluNew
+	WHERE aluNew.rn = 1
 ),
 [master] AS (
 	SELECT [registered], [mc_no], [target_special], [target_ct] ,
