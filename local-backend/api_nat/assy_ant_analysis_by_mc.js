@@ -1456,7 +1456,6 @@ router.get("/production_hour_all_mc/:date", async (req, res) => {
             ${COLUMN_OK_FRONT} AS daily_ok,
             ${COLUMN_NG_FRONT} AS daily_ng,
             ${COLUMN_TOTAL_FRONT} AS daily_total,
-            ${COLUMN_CT_FRONT} AS [cycle_t],
             CASE 
                 WHEN ${COLUMN_TOTAL_FRONT} = 0 THEN 0
                 ELSE cast((${COLUMN_OK_FRONT} * 1.0 / ${COLUMN_TOTAL_FRONT}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
@@ -1473,7 +1472,6 @@ router.get("/production_hour_all_mc/:date", async (req, res) => {
             ${COLUMN_OK_REAR} AS daily_ok,
             ${COLUMN_NG_REAR} AS daily_ng,
             ${COLUMN_TOTAL_REAR} AS daily_total,
-            ${COLUMN_CT_REAR} AS [cycle_t],
             CASE 
                 WHEN ${COLUMN_TOTAL_REAR} = 0 THEN 0
                 ELSE cast((${COLUMN_OK_REAR} * 1.0 / ${COLUMN_TOTAL_REAR}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)

@@ -1264,9 +1264,138 @@ const productionDaily = async(dbms, DATABASE_PROD, DATABASE_MASTER, COLUMN_TOTAL
   }
 }
 
+const productionByHourAllMc = async (dbms, DATABASE_MASTER, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUMN_TOTAL, date) => {
+    try {
+      let data = await dbms.query(`
+          SELECT [registered],
+              convert(varchar, [registered], 8) AS TIME,
+              format(iif(DATEPART(HOUR, [registered]) < 7, dateadd(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') AS [mfg_date] ,
+              [mc_no],
+              ${COLUMN_OK} AS daily_ok,
+              ${COLUMN_NG} AS daily_ng,
+              ${COLUMN_TOTAL} AS daily_total,
+              CASE 
+                  WHEN ${COLUMN_TOTAL} = 0 THEN 0
+                  ELSE cast((${COLUMN_OK} * 1.0 / ${COLUMN_TOTAL}) * 100 AS decimal(20, 2)) -- คูณ 1.0 เพื่อป้องกัน Integer Division (หารแล้วทศนิยมหาย)
+              END AS yield,
+              FORMAT(registered, 'HH:mm') AS cat_time,
+              IIF(FORMAT(registered, 'HH:mm') >= '07:00' and FORMAT(registered, 'HH:mm') < '19:00', 'M', 'N') AS shift
+          FROM ${DATABASE_PROD}
+          WHERE FORMAT(IIF(DATEPART(HOUR, [registered]) < 7, DATEADD(DAY, -1, [registered]), [registered]), 'yyyy-MM-dd') = '${date}'
+          OR (FORMAT([registered], 'yyyy-MM-dd hh') = '${date} 06')
+          ORDER BY registered ASC
+      `);
+  
+      let master = await dbms.query(`
+        with [m] as (
+          SELECT [registered]
+            ,[mc_no]
+            ,[part_no]
+            ,[target_ct]
+            ,[target_utl]
+            ,[target_yield]
+            ,[target_special]
+            ,[ring_factor]
+            ,FLOOR([target_special]/24) AS [target_by_hr]
+            ,ROW_NUMBER() over (partition by mc_no order by [registered] desc) as rn
+          FROM ${DATABASE_MASTER}
+        )
+        select * from m
+        where rn = 1
+      `)
+
+    if (data[0].length > 0) {
+      const arrayData = data[0];
+      const groupedData = arrayData.reduce((acc, item) => {
+        // สร้าง key ที่เป็น mc_no
+        const key = `${item.mc_no}`;
+        (acc[key] = acc[key] || []).push(item);
+        return acc;
+      }, {});
+
+      const shiftHoursMap = {
+        M: ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"],
+        N: ["19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00"]
+      }
+      const resultByShift = {
+        M: {},
+        N: {}
+      };
+
+      Object.keys(groupedData).forEach((key, index) => {
+        // key = mc_no พอ groupedData[key] จะเป็นข้อมูลของ mc_no นี้
+        const currentGroupData = groupedData[key] || [];
+        let previousItem = null;
+        const dataByHourMap = {};
+
+        for(let i=1; i<currentGroupData.length; i++){
+          const item = currentGroupData[i];
+          if (!item?.cat_time) continue;
+
+          previousItem = currentGroupData[i-1];
+          let calTotal = item.daily_total - previousItem.daily_total;
+          let calOk = item.daily_ok - previousItem.daily_ok;
+          if (calTotal < 0) calTotal = item.daily_total;
+          if (calOk < 0) calOk = item.daily_ok;
+
+          const currentYield = calTotal === 0 ? 0 : (calOk / calTotal) * 100;
+          const hourKey = item.cat_time.split(":")[0];
+
+          // เก็บค่าที่คำนวณเสร็จแล้วลง Map ทันที
+          dataByHourMap[hourKey] = {
+            calOk,
+            yieldData: Number(currentYield.toFixed(2)),
+            cat_time: item.cat_time,
+          };
+        }
+
+        Object.keys(shiftHoursMap).forEach((currentShift) => {
+          const groupDataOk = [];
+          const groupYieldData = [];
+          const finalDate = [];
+          const defaultHours = shiftHoursMap[currentShift];
+
+          defaultHours.forEach((hourStr) => {
+            const hourKey = hourStr.split(":")[0];
+            const match = dataByHourMap[hourKey];
+  
+            groupDataOk.push(match ? match.calOk : 0);
+            groupYieldData.push(match ? match.yieldData : 0);
+            finalDate.push(match ? match.cat_time : hourStr);
+          });
+
+          resultByShift[currentShift][key] = {
+            mc_no: key.toLocaleUpperCase(),
+            data_ok: groupDataOk,
+            yield: groupYieldData,
+            target: master[0][index],
+            daily_yield: currentGroupData.at(-1).yield,
+            data_raw: data[0],
+            data_date: finalDate,
+            success: true,
+            message: "ok",
+          }
+        })
+      })
+      
+      return{
+        data: resultByShift,
+        success: true,
+        message: "ok",
+      };
+      } else {
+        return{ data: [], data_raw: data[0], success: true, message: "ok" };
+      }
+    } catch (error) {
+      console.log("Can't get data productionByHour: ",error);
+      return error.message;
+    }
+}
+
 module.exports = {
   productionByHour,
   alarm,
   status,
-  productionDaily
+  productionDaily,
+  productionByHourAllMc
 };

@@ -63,4 +63,14 @@ router.get("/get_production_analysis_by_mc/:mc_no/:date", async (req, res) => {
   }
 });
 
+router.get("/production_hour_all_mc/:date", async (req, res) => {
+  try {
+    let { date } = req.params;
+    const result = await getData.productionByHourAllMc(dbms,DATABASE_MASTER, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUMN_TOTAL, date)
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ data: [], success: false, message: "Internal Server Error" });
+  }
+});
+
 module.exports = router;
