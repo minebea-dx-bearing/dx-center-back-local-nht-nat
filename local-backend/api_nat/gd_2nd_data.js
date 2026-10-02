@@ -20,31 +20,21 @@ router.get("/getData/:startQuery/:endQuery", async (req, res) => {
                     ,[avgct]
                     ,[utilization]
                 FROM [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]
-                WHERE registered >= '${startQuery} 07:00' and registered <= '${endWorkDay} 07:00'
+                WHERE registered >= '${startQuery} 07:00' and registered <= '${endWorkDay} 07:00' AND mc_no LIKE '%h'
             ),
             [calc_ct] AS (
-                SELECT work_date, ROUND(AVG([avgct])/100, 2) AS [avgct], LEFT(mc_no, 4) AS mc_no, MAX(mc_type) AS mc_type
+                SELECT work_date, LEFT(mc_no, 4) AS mc_no, MAX(mc_type) AS mc_type, ROUND(AVG([avgct])/100, 2) AS [avgct]
                 FROM [data]
                 WHERE [avgct]>=200 AND [avgct]<=280
-                GROUP BY work_date, mc_no
-            ),
-            [max_ct] AS (
-                SELECT
-                    work_date,
-                    mc_no,
-                    MAX(mc_type) AS mc_type,
-                    MAX([avgct]) AS [avgct]
-                FROM [calc_ct]
                 GROUP BY work_date, mc_no
             ),
             [calc_utl] AS (
                 SELECT work_date, ROUND(AVG([utilization])/10, 2) AS [avgutl], LEFT(mc_no, 4) AS mc_no
                 FROM [data]
-                WHERE mc_no LIKE '%h'
                 GROUP BY work_date, mc_no
             )
             SELECT ct.*, utl.[avgutl]
-            FROM [max_ct] ct
+            FROM [calc_ct] ct
             LEFT JOIN [calc_utl] utl ON ct.mc_no = utl.mc_no AND ct.work_date = utl.work_date
             ORDER BY mc_no, work_date
         `);
