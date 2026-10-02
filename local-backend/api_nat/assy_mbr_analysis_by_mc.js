@@ -11,7 +11,7 @@ const DATABASE_IOT = "[nat_mc_assy_mbr].[dbo].[MONITOR_IOT]";
 const DATABASE_MASTER = "[nat_mc_assy_mbr].[dbo].[DATA_MASTER_MBR]";
 
 const COLUMN_OK = "[daily_ok]";
-const COLUMN_NG = "[daily_ng]";
+const COLUMN_NG = "[daily_ng] + [c1_ng] + [c2_ng] + [c3_ng] + [c4_ng] + [c5_ng]";
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
 const COLUMN_CT = "[cycle_t]";
 

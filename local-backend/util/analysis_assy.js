@@ -1353,6 +1353,7 @@ const productionByHourAllMc = async (dbms, DATABASE_MASTER, DATABASE_PROD, COLUM
           const groupDataOk = [];
           const groupYieldData = [];
           const finalDate = [];
+          const isBilnk = [];
           const defaultHours = shiftHoursMap[currentShift];
 
           defaultHours.forEach((hourStr) => {
@@ -1362,6 +1363,7 @@ const productionByHourAllMc = async (dbms, DATABASE_MASTER, DATABASE_PROD, COLUM
             groupDataOk.push(match ? match.calOk : 0);
             groupYieldData.push(match ? match.yieldData : 0);
             finalDate.push(match ? match.cat_time : hourStr);
+            isBilnk.push(0);
           });
 
           resultByShift[currentShift][key] = {
@@ -1370,10 +1372,9 @@ const productionByHourAllMc = async (dbms, DATABASE_MASTER, DATABASE_PROD, COLUM
             yield: groupYieldData,
             target: master[0][index],
             daily_yield: currentGroupData.at(-1).yield,
-            data_raw: data[0],
-            data_date: finalDate,
-            success: true,
-            message: "ok",
+            last_data: currentGroupData.at(-1),
+            isBilnk,
+            data_date: finalDate
           }
         })
       })
