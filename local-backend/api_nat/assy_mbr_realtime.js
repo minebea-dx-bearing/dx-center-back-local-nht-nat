@@ -47,7 +47,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const s_target_utl = item.target_utl || 0;
 
     const s_act_pd = item.daily_ok || 0;
-    const s_ng_pd = item.daily_ng || 0;
+    const s_ng_pd = item.daily_ng + item.c1_ng + item.c2_ng + item.c3_ng + item.c4_ng + item.c5_ng || 0;
     const s_act_ct = item.cycle_t / 100 || 0;
 
     const s_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
