@@ -32,6 +32,7 @@ const buildStore = (processName) => {
   const DATABASE_MASTER = `[nat_mc_assy_${processName.toLowerCase()}${ant_db}].[dbo].[DATA_MASTER_${processName.toUpperCase()}]`;
 
   const hub = getHub(`mqtt://${process.env.NAT_MQTT_ASSY}:${process.env.MQTT_PORT}`);
+  // const hub = getHub(`mqtt://${process.env.NAT_MQTT_IP}:${process.env.MQTT_PORT_ASSY}`);
 
   const store = createProcessStore({
     processName,
