@@ -17,7 +17,7 @@ const COLUMN_NG = "([daily_ng] + [c1_ng] + [c2_ng] + [c3_ng] + [c4_ng] + [c5_ng]
 const COLUMN_TOTAL = `(${COLUMN_OK} + ${COLUMN_NG})`;
 
 const startTime_daily = 6;
-const startTime_shift = (moment().format("HH:mm") <= "06:05" || moment().format("HH:mm") >= "18:05") ? 18 : 6;
+const startTime_shift = () => (moment().format("HH:mm") <= "06:05" || moment().format("HH:mm") >= "18:05") ? 18 : 6;
 const startMin = 5;
 const store = getStore("MBR");
 
@@ -54,7 +54,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now, current_d
   const start_time_daily = now.isBefore(todaysStart_daily) ? moment(todaysStart_daily).subtract(1, "day") : todaysStart_daily;
   const elapsedMin_daily = Math.max(now.diff(start_time_daily, "minutes"), 0)
   
-  const todaysStart_shift = moment(now).startOf("day").hour(startTime_shift).minute(startMin);
+  const todaysStart_shift = moment(now).startOf("day").hour(startTime_shift()).minute(startMin);
   const start_time_shift = now.isBefore(todaysStart_shift) ? moment(todaysStart_shift).subtract(1, "day") : todaysStart_shift;
   const elapsedMin_shift = Math.max(now.diff(start_time_shift, "minutes"), 0)
 
@@ -151,7 +151,7 @@ const machinesData = async () => {
     const current_date = (now.format("HH:mm") <= "06:05") ? now.subtract(1, 'day').format("YYYY-MM-DD") : now.format("YYYY-MM-DD");
     const [machines, runningTime] = await Promise.all([Promise.resolve(store.getRawMap()), store.getRunningTime()]);
     const getDataHourly = await getData.productionByHourAllMc(dbms, DATABASE_MASTER, DATABASE_PROD, COLUMN_OK, COLUMN_NG, COLUMN_TOTAL, current_date)
-    const dataHourly = (startTime_shift === 18) ? getDataHourly.data.N : getDataHourly.data.M
+    const dataHourly = (startTime_shift() === 18) ? getDataHourly.data.N : getDataHourly.data.M
     const dataArray = prepareRealtimeData(machines, runningTime, now, current_date, dataHourly);
     return({ data: dataArray, success: true });
   } catch (error) {
