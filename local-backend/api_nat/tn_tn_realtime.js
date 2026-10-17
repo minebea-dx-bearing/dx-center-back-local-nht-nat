@@ -89,6 +89,7 @@ router.get( "/machines",
     getRunningTime: store.getRunningTime,
     prepareRealtimeData,
     summary: "standard",
+    process: "TN"
   }),
 );
 

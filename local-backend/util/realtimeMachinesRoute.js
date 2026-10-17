@@ -55,7 +55,29 @@ const summarize = (dataArray, fields) => {
   };
 };
 
-const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary }) => {
+const calTotalbyPart = (dataArray) => {
+  const totalMcOR = dataArray.filter(i => i.part_no.includes("1R")).length;
+  const sumProdOR = dataArray.filter(i => i.part_no.includes("1R")).reduce((sum, prod) => sum+prod.act_pd, 0);
+  const sumTargetOR = dataArray.filter(i => i.part_no.includes("1R")).reduce((sum, prod) => sum+prod.target_pd, 0);
+  const diffOR = sumProdOR - sumTargetOR;
+  const totalMcIR = dataArray.filter(i => i.part_no.includes("2R")).length;
+  const sumProdIR = dataArray.filter(i => i.part_no.includes("2R")).reduce((sum, prod) => sum+prod.act_pd, 0);
+  const sumTargetIR = dataArray.filter(i => i.part_no.includes("2R")).reduce((sum, prod) => sum+prod.target_pd, 0);
+  const diffIR = sumProdIR - sumTargetIR;
+
+  return {
+    totalMcOR,
+    sumProdOR,
+    sumTargetOR,
+    diffOR,
+    totalMcIR,
+    sumProdIR,
+    sumTargetIR,
+    diffIR,
+  };
+};
+
+const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData, summary, process }) => {
   const fields = summary ? SUMMARY_FIELDS[summary] : null;
   if (summary && !fields) throw new Error(`makeMachinesHandler: unknown summary "${summary}"`);
 
@@ -66,6 +88,7 @@ const makeMachinesHandler = ({ getMachines, getRunningTime, prepareRealtimeData,
       const dataArray = await prepareRealtimeData(machines, runningTime, now);
       const body = { success: true, data: dataArray };
       if (fields) body.resultSummary = summarize(dataArray, fields);
+      if (process) body.resultTotalbyPart = calTotalbyPart(dataArray);
       res.json(body);
     } catch (error) {
       console.error("API Error in /machines: ", error);
