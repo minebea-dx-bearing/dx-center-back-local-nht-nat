@@ -8,84 +8,68 @@ router.get("/getData/:startQuery/:endQuery", async (req, res) => {
     const endWorkDay = moment(endQuery).add(1, "days").format("YYYY-MM-DD");
     try {
         const response = await dbms.query(`
-            WITH [data] as (
-                SELECT 
-                    [registered]
-                    ,CASE WHEN DATEPART(HOUR, registered) <= 6 THEN CONVERT(date, DATEADD(DAY, -1, registered))
-                        ELSE CONVERT(date, registered)
-                    END AS [work_date]
-                    ,[mc_no]
-                    ,LEFT(mc_no, 2) AS mc_type
-                    ,[process]
-                    ,[avgct]
-                    ,[utilization]
-                FROM [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]
-                WHERE registered >= '${startQuery} 07:00' and registered <= '${endWorkDay} 07:00' AND mc_no LIKE '%h'
-            ),
-            [calc_ct] AS (
-                SELECT work_date, LEFT(mc_no, 4) AS mc_no, MAX(mc_type) AS mc_type, ROUND(AVG([avgct])/100, 2) AS [avgct]
-                FROM [data]
-                WHERE [avgct]>=200 AND [avgct]<=280
-                GROUP BY work_date, mc_no
-            ),
-            [calc_utl] AS (
-                SELECT work_date, ROUND(AVG([utilization])/10, 2) AS [avgutl], LEFT(mc_no, 4) AS mc_no
-                FROM [data]
-                GROUP BY work_date, mc_no
-            )
-            SELECT ct.*, utl.[avgutl]
-            FROM [calc_ct] ct
-            LEFT JOIN [calc_utl] utl ON ct.mc_no = utl.mc_no AND ct.work_date = utl.work_date
-            ORDER BY mc_no, work_date
+            SELECT 
+                [registered]
+                ,CASE WHEN DATEPART(HOUR, registered) <= 6 THEN CONVERT(date, DATEADD(DAY, -1, registered))
+                    ELSE CONVERT(date, registered)
+                END AS [work_date]
+                ,[mc_no]
+                ,LEFT(mc_no, 2) AS mc_type
+                ,[process]
+                ,[avgct]/100 AS [avgct]
+                ,[utilization]/10 AS [utilization]
+            FROM [nat_mc_mcshop_2gd].[dbo].[DATA_PRODUCTION_2GD]
+            WHERE registered >= '${startQuery} 07:00' and registered <= '${endWorkDay} 07:00' AND mc_no LIKE '%h'
         `);
 
         if (response[1] > 0) {
             let data = response[0];
 
-            const groupedData = data.reduce((acc, item) => {
-                const key = `${item.work_date}_${item.mc_type}`;
+            // ฟังก์ชันกลางสำหรับหาค่าเฉลี่ย (มี guard กันกรณี array ว่างหารด้วย 0)
+            const calcAvg = (arr) => arr.length ? Number((arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(2)) : 0;
 
-                // 2. ถ้ายังไม่เคยมี Key นี้ใน Object ผลลัพธ์ (acc) ให้สร้างโครงสร้างเริ่มต้นไว้ก่อน
-                if (!acc[key]) {
-                    acc[key] = {
-                        work_date: item.work_date,
-                        mc_type: item.mc_type,
-                        ct: [],
-                        utl: []
-                    };
-                }
-
-                acc[key].ct.push(item.avgct);
-                acc[key].utl.push(item.avgutl);
-
+            // ขั้นตอนที่ 1: Group by work_date + mc_no และคำนวณ Trimmed Avg CT กับ Avg UTL
+            const mcMap = data.reduce((acc, { work_date, mc_type, mc_no, avgct, utilization }) => {
+                const key = `${work_date}_${mc_no}`;
+                if (!acc[key]) acc[key] = { work_date, mc_type, mc_no, ct: [], utl: [] };
+                acc[key].ct.push(avgct);
+                acc[key].utl.push(utilization);
                 return acc;
             }, {});
 
-            Object.keys(groupedData).forEach((key) => {
-                const ctArray = groupedData[key].ct;
-                const utlArray = groupedData[key].utl;
-                
-                const sumCt = ctArray.reduce((sum, currentCt) => sum + currentCt, 0);
-                const sumUtl = utlArray.reduce((sum, currentUtl) => sum + currentUtl, 0);
-                
-                const avgCt = Number((sumCt / ctArray.length).toFixed(2));
-                const avgUtl = Number((sumUtl / utlArray.length).toFixed(2));
+            const mcAggregated = Object.values(mcMap).map((item) => {
+                // ตัด 2 ค่าหน้า-หลัง หลังเรียงลำดับ (Trimmed Mean) ถ้าข้อมูลน้อยกว่าหรือเท่ากับ 4 จะใช้ array เดิม
+                const sortedCt = [...item.ct].sort((a, b) => a - b);
+                const trimmedCt = sortedCt.length > 4 ? sortedCt.slice(2, -2) : sortedCt;
 
-                // 3. ยัดฟิลด์ avg ใหม่เข้าไปในบ้านหลังเดิม
-                groupedData[key].avgCt = avgCt;
-                groupedData[key].avgUtl = avgUtl;
-            });
-
-            // const calcAvg = (arr) => arr.length === 0 ? 0 : Number(arr.reduce((acc, val) => acc + val, 0) / arr.length).toFixed(2);
-            const finalArray = Object.keys(groupedData).map((key) => {
                 return {
-                    ...groupedData[key] // เทข้อมูล date, age, avg ตามลงไป
+                    work_date: item.work_date,
+                    mc_type: item.mc_type,
+                    mc_no: item.mc_no,
+                    ct: calcAvg(trimmedCt),
+                    utl: calcAvg(item.utl),
                 };
             });
 
+            // ขั้นตอนที่ 2: Group by work_date + mc_type และคำนวณค่าเฉลี่ยสรุปเป็น Array สุดท้าย
+            const typeMap = mcAggregated.reduce((acc, { work_date, mc_type, ct, utl }) => {
+                const key = `${work_date}_${mc_type}`;
+                if (!acc[key]) acc[key] = { work_date, mc_type, ct: [], utl: [] };
+                acc[key].ct.push(ct);
+                acc[key].utl.push(utl);
+                return acc;
+            }, {});
+
+            const finalArray = Object.values(typeMap).map((item) => ({
+                work_date: item.work_date,
+                mc_type: item.mc_type,
+                ct: calcAvg(item.ct),
+                utl: calcAvg(item.utl),
+            }));
+
             res.json({
                 success: true,
-                data,
+                data: mcAggregated,
                 avgData: finalArray
             });
         } else {
