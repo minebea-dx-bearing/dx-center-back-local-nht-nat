@@ -28,25 +28,43 @@ router.get("/getData/:startQuery/:endQuery", async (req, res) => {
             // ฟังก์ชันกลางสำหรับหาค่าเฉลี่ย (มี guard กันกรณี array ว่างหารด้วย 0)
             const calcAvg = (arr) => arr.length ? Number((arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(2)) : 0;
 
+            // ฟังก์ชันคำนวณ TRIMMEAN ตามมาตรฐาน (percent เช่น 0.2 = ตัดออก 20%)
+            const trimMean = (arr, percent = 0.2) => {
+                if (!arr || arr.length === 0) return 0;
+                
+                // เรียงลำดับจากน้อยไปมาก
+                const sorted = [...arr].sort((a, b) => a - b);
+                const n = sorted.length;
+                
+                // คำนวณจำนวนข้อมูลที่ต้องตัดทิ้งทั้งหมด (ปัดเศษลงตามหลัก Excel)
+                const trimCount = Math.floor(n * percent);
+                
+                // แบ่งตัดออกหัว-ท้ายฝั่งละ k ตัว
+                const k = Math.floor(trimCount / 2);
+                
+                // ตัดข้อมูลช่วงหัวและท้ายออก
+                const trimmed = k > 0 ? sorted.slice(k, n - k) : sorted;
+                
+                // คำนวณค่าเฉลี่ย
+                const sum = trimmed.reduce((acc, val) => acc + val, 0);
+                return Number((sum / trimmed.length).toFixed(2));
+            };
+
             // ขั้นตอนที่ 1: Group by work_date + mc_no และคำนวณ Trimmed Avg CT กับ Avg UTL
             const mcMap = data.reduce((acc, { work_date, mc_type, mc_no, avgct, utilization }) => {
                 const key = `${work_date}_${mc_no}`;
                 if (!acc[key]) acc[key] = { work_date, mc_type, mc_no, ct: [], utl: [] };
-                acc[key].ct.push(avgct);
+                if (avgct!= 0) acc[key].ct.push(avgct);
                 acc[key].utl.push(utilization);
                 return acc;
             }, {});
 
             const mcAggregated = Object.values(mcMap).map((item) => {
-                // ตัด 2 ค่าหน้า-หลัง หลังเรียงลำดับ (Trimmed Mean) ถ้าข้อมูลน้อยกว่าหรือเท่ากับ 4 จะใช้ array เดิม
-                const sortedCt = [...item.ct].sort((a, b) => a - b);
-                const trimmedCt = sortedCt.length > 4 ? sortedCt.slice(2, -2) : sortedCt;
-
                 return {
                     work_date: item.work_date,
                     mc_type: item.mc_type,
                     mc_no: item.mc_no,
-                    ct: calcAvg(trimmedCt),
+                    ct: trimMean(item.ct, 0.2),
                     utl: calcAvg(item.utl),
                 };
             });

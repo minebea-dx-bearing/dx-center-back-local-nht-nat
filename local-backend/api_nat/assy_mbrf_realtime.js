@@ -53,7 +53,7 @@ const prepareRealtimeData = (currentMachineData, runningTimeData, now) => {
     const f_target_utl = item.target_utl || 0;
 
     const f_act_pd = item.match || 0;
-    const f_ng_pd = item.a_ng + item.a_ng_pos + item.a_ng_neg + item.a_unm + item.b_ng_pos + item.b_ng_neg + item.b_unm || 0;
+    const f_ng_pd = item.a_ng_pos + item.a_ng_neg + item.a_unm + item.b_ng_pos + item.b_ng_neg + item.b_unm || 0;
     const f_act_ct = item.cycle_time / 100 || 0;
 
     const f_target_pd = target === 0 ? 0 : Math.floor((target / (24 * 60)) * elapsedMin);
